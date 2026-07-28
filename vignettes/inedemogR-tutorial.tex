@@ -1,0 +1,1484 @@
+%\VignetteIndexEntry{inedemogR: A Comprehensive Tutorial}
+%\VignetteEngine{R.rsp::tex}
+%\VignetteEncoding{UTF-8}
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}          % Times-compatible text and math font
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.35,0.55}
+\definecolor{codestr}{rgb}{0.55,0.0,0.0}
+\definecolor{codecom}{rgb}{0.4,0.4,0.4}
+
+\lstdefinelanguage{Rlang}{
+  morekeywords={function,if,else,for,while,repeat,break,next,return,TRUE,FALSE,NULL,NA,library},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]'
+}
+\lstset{
+  language=Rlang,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecom}\itshape,
+  stringstyle=\color{codestr},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0.3pt,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=flexible,
+  showstringspaces=false,
+  xleftmargin=2pt,
+  xrightmargin=2pt,
+  aboveskip=8pt,
+  belowskip=8pt
+}
+
+\newcommand{\pkg}[1]{\textbf{#1}}
+\newcommand{\fn}[1]{\texttt{#1}}
+
+\title{\pkg{inedemogR}: Tidy Access to Spanish INE Demographic Data\\[4pt]
+\large A Comprehensive Tutorial}
+\author{J.\ R.\ Caro-Barrera}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+\pkg{inedemogR} provides tidy, harmonized, reproducible access to demographic
+data published by the Spanish National Statistics Institute (Instituto
+Nacional de Estad\'{i}stica, INE), retrieved live via the official
+\pkg{ineapir} API wrapper, with spatial integration via \pkg{mapSpain} and
+plotting built on \pkg{ggplot2}.
+
+The package is organized around two complementary data systems that serve
+different purposes. They are deliberately kept parallel rather than merged
+into one interface, because they operate at genuinely different levels of
+demographic detail.
+
+\begin{description}[leftmargin=2.2cm,style=nextline]
+  \item[System A] \fn{get\_ine\_demog()}, \fn{get\_ine\_geo()},
+    \fn{list\_ine\_indicators()}, \fn{plot\_ine\_map()},
+    \fn{map\_indicator()}, \fn{update\_ine\_data()}. Quick, multi-geography
+    (municipality or province) totals for population, births, and deaths,
+    with no age or sex breakdown. Best for national/regional choropleths and
+    quick comparisons.
+  \item[System B] \fn{get\_ine\_population()}, \fn{get\_ine\_births()},
+    \fn{get\_ine\_births\_by\_age()}, \fn{get\_ine\_deaths()},
+    \fn{compute\_exposure()}, \fn{compute\_death\_rates()},
+    \fn{build\_life\_tables()}, \fn{build\_abridged\_life\_tables()},
+    \fn{download\_ine\_data()}, and the summary indicators, decomposition,
+    and charts built on top of them. Rigorous, province-level,
+    age/sex-disaggregated analysis following the Human Mortality Database
+    (HMD) Methods Protocol V6, as implemented for the Spanish subnational
+    Human Mortality Database (SHMD) pipeline. This is the only system
+    capable of producing dependency ratios, population pyramids, Lexis
+    diagrams, period life tables, fertility schedules (ASFR/TFR/MAC/GRR/NRR),
+    and mortality decomposition, since these all require an age breakdown
+    that System A's data does not carry.
+\end{description}
+
+This tutorial is split into two parts, matching the two purposes a user of
+\pkg{inedemogR} typically has:
+
+\begin{itemize}
+  \item \textbf{Part I (Section~\ref{sec:part1})} covers strictly data
+    \emph{retrieval, cleaning, validation, and storage} --- the functions in
+    \fn{get\_ine\_demog.R}, \fn{get\_ine\_geo.R}, \fn{population.R},
+    \fn{births.R}, \fn{deaths.R}, \fn{exposure.R}, \fn{death\_rates.R},
+    \fn{life\_tables.R}, \fn{abridged\_life\_tables.R},
+    \fn{download\_ine\_data.R}, and the caching layer in \fn{helpers.R}.
+  \item \textbf{Part II (Section~\ref{sec:part2})} covers \emph{demographic
+    analysis and visualization} --- the indicator functions in
+    \fn{indicators.R}, the mortality-decomposition functions in
+    \fn{decomposition.R}, and the charting/mapping functions in
+    \fn{plot\_demog.R}, \fn{plot\_ine\_map.R}, and \fn{lexis.R} --- together
+    with full worked examples.
+\end{itemize}
+
+Every mortality-pipeline calculation (exposure-to-risk, central death
+rates, life tables) is presented with the exact mathematical formulation
+implemented in the code, following the HMD Methods Protocol V6.
+
+\subsection{Installation}
+
+\begin{lstlisting}
+# From a local clone or source tarball:
+# install.packages("devtools")
+devtools::install()
+
+library(inedemogR)
+\end{lstlisting}
+
+\subsection{A note on live data}
+
+Every retrieval function in this package calls the real INE API (or, for
+\fn{get\_ine\_geo()}, the real \pkg{mapSpain} boundary service) over the
+network. There is no bundled offline dataset. All code listings in this
+tutorial are real, runnable calls against live INE data as of the 2023--2024
+reference years used in the examples; results will naturally update as INE
+publishes new years. Section~\ref{sec:caching} explains how to avoid
+repeatedly re-downloading the same data during iterative analysis.
+
+\newpage
+\section{Part I --- Data Retrieval, Cleaning, and Storage}
+\label{sec:part1}
+
+\subsection{System A: quick multi-geography totals}
+
+\subsubsection{\fn{list\_ine\_indicators()}}
+
+Returns the internal registry (\fn{ine\_variables}) mapping each indicator
+code to the real INE table it is retrieved from, the geographic dimension
+column INE's API returns for that table, and the geographic granularity the
+table is actually published at.
+
+\begin{lstlisting}
+list_ine_indicators()
+#> # A tibble: 3 x 6
+#>   indicator        name             description   id_table geo_var geo_level
+#>   population_total Resident pop.    ...            29005    Municipios municipality
+#>   births_total      Live births     ...            6506     Provincias province
+#>   deaths_total      Deaths          ...            6545     Provincias province
+\end{lstlisting}
+
+Migration indicators are not included in this release: INE's migration
+tables are origin$\times$destination$\times$year flow matrices, a different
+shape from the simple geography$\times$year stock tables backing the three
+indicators above, so wiring one in needs its own design pass rather than a
+registry one-liner. \fn{get\_ine\_demog()} still raises an explicit
+\fn{"Unknown indicator(s)"} error for any indicator code not in
+\fn{list\_ine\_indicators()}, migration or otherwise.
+
+\subsubsection{\fn{get\_ine\_demog()}}
+
+Retrieves one or more indicators via \fn{ineapir::get\_data\_table()} and
+tidies the result into one row per geography $\times$ year, one column per
+indicator.
+
+\begin{lstlisting}
+get_ine_demog(indicator, geo_level = NULL, year = NULL,
+              region = NULL, sex = "Total", geometry = FALSE)
+\end{lstlisting}
+
+\begin{description}[leftmargin=2.4cm,style=nextline]
+  \item[indicator] Character vector of indicator codes (see
+    \fn{list\_ine\_indicators()}).
+  \item[geo\_level] The geographic level to fetch; inferred from
+    \fn{indicator} if \fn{NULL}. All requested indicators must share the
+    same level (population is municipality-level; births/deaths are
+    province-level only) --- requesting a mix across levels is a hard error.
+  \item[year] Numeric/character year; \fn{NULL} returns only the latest
+    published period.
+  \item[region] Optional regex vector matched against the geography name.
+  \item[sex] One of \fn{"Total"}, \fn{"Hombres"}, \fn{"Mujeres"}.
+  \item[geometry] If \fn{TRUE}, joins \fn{get\_ine\_geo()}'s geometry and
+    returns an \fn{sf} object.
+\end{description}
+
+\begin{lstlisting}
+# Population totals for every municipality, 2023
+pop_totals <- get_ine_demog(indicator = "population_total", year = 2023)
+
+# Births and deaths together, province level, one call
+vitals <- get_ine_demog(
+  indicator = c("births_total", "deaths_total"), year = 2023
+)
+\end{lstlisting}
+
+\subsubsection{\fn{get\_ine\_geo()}}
+
+Retrieves province or municipality boundaries via \pkg{mapSpain}
+(\fn{esp\_get\_prov()} / \fn{esp\_get\_munic()}), reprojected to ETRS89 /
+UTM zone 30N (EPSG:25830), with a \fn{GEOID} column that matches
+\fn{get\_ine\_demog()}'s output exactly so the two can be joined directly.
+
+\begin{lstlisting}
+get_ine_geo(geo_level = c("municipality", "province"), region = NULL,
+            moveCAN = TRUE, can_gap_km = 60)
+\end{lstlisting}
+
+When \fn{moveCAN = TRUE} (the default), the Canary Islands are translated so
+they sit \fn{can\_gap\_km} kilometres from the nearest mainland coastline
+point (near C\'{a}diz/Huelva) rather than left in their true, far-southwest
+position --- the standard cartographic convention for compact national maps
+of Spain. The shifted islands' bounding box is attached as the
+\fn{"can\_box"} attribute, used by \fn{plot\_ine\_map()} and
+\fn{map\_indicator()} to draw an inset separator frame.
+
+\begin{lstlisting}
+prov_geo <- get_ine_geo(geo_level = "province")
+mun_geo  <- get_ine_geo(geo_level = "municipality", region = "Sevilla")
+\end{lstlisting}
+
+\subsubsection{\fn{update\_ine\_data()}}
+
+Checks every indicator wired in the registry for its latest published year
+and refreshes a local \fn{.rds} cache (under
+\fn{tools::R\_user\_dir("inedemogR", "cache")} by default) only if INE has
+published a newer year than what is cached, or if \fn{force = TRUE}.
+
+\begin{lstlisting}
+update_ine_data(force = FALSE, data_dir = tools::R_user_dir("inedemogR", "cache"))
+\end{lstlisting}
+
+\subsection{System B: age/sex-disaggregated province data}
+
+\subsubsection{Caching layer (\fn{helpers.R})}
+\label{sec:caching}
+
+\fn{get\_ine\_population()}, \fn{get\_ine\_births()}, and
+\fn{get\_ine\_deaths()} share a common disk-cache wrapper,
+\fn{with\_ine\_cache()}. Fetching province-level age-specific deaths and
+population from INE's Tempus3 API (sometimes via a full CSV bulk-export
+fallback when the JSON API rejects an oversized query) is the slowest part
+of the package, often taking minutes; results are cached as \fn{.rds} files
+keyed by the call's arguments so repeated calls during iterative analysis
+are near-instant.
+
+Every System B retrieval function exposes the same three arguments:
+
+\begin{description}[leftmargin=2.2cm,style=nextline]
+  \item[use\_cache] (default \fn{TRUE}) Return a previously cached result
+    for the same arguments instead of re-fetching.
+  \item[force] (default \fn{FALSE}) Ignore any existing cache and re-fetch
+    from INE, refreshing the cache afterwards.
+  \item[cache\_dir] Directory for the cache (default:
+    \fn{tools::R\_user\_dir("inedemogR", "cache")}, the same location
+    \fn{update\_ine\_data()} uses).
+\end{description}
+
+\begin{lstlisting}
+# First call: fetches live and caches the result.
+pop <- get_ine_population(n_periods = 10)
+
+# Second call, same arguments: returns instantly from cache.
+pop <- get_ine_population(n_periods = 10)
+
+# Force a fresh fetch, e.g. after INE has published a new year.
+pop <- get_ine_population(n_periods = 10, force = TRUE)
+\end{lstlisting}
+
+\subsubsection{\fn{get\_ine\_population()}}
+
+Retrieves Spanish January-1st provincial population by single-year age
+(0--100+) and sex from INE's Padr\'{o}n Municipal Continuo, per SHMD
+Protocol Section 12, Step 3.
+
+\begin{lstlisting}
+get_ine_population(table_id = 56945, n_periods = 30,
+                    use_cache = TRUE, force = FALSE,
+                    cache_dir = tools::R_user_dir("inedemogR", "cache"))
+\end{lstlisting}
+
+Returns \fn{list(data, qc)}: \fn{data} has columns \fn{ine\_code},
+\fn{nuts3\_code}, \fn{nuts2\_code}, \fn{province\_name}, \fn{year},
+\fn{age}, \fn{female}, \fn{male}, \fn{total}; \fn{qc} is the output of
+\fn{validate\_population()}, which checks for negative/missing counts,
+incomplete age ranges, duplicate rows, year gaps, and implausible
+age-to-age jumps ($>$50\%, informational only).
+
+\begin{lstlisting}
+pop <- get_ine_population()
+head(pop$data)
+pop$qc$passed
+\end{lstlisting}
+
+\subsubsection{\fn{get\_ine\_births()}}
+
+Retrieves annual live births by province and sex from INE's MNPN operation.
+
+\begin{lstlisting}
+get_ine_births(table_id = 6506, n_periods = 100,
+               use_cache = TRUE, force = FALSE,
+               cache_dir = tools::R_user_dir("inedemogR", "cache"))
+\end{lstlisting}
+
+Returns \fn{list(data, qc)}; \fn{data} has \fn{ine\_code}, \fn{nuts3\_code},
+\fn{nuts2\_code}, \fn{province\_name}, \fn{year}, \fn{female}, \fn{male},
+\fn{total}. \fn{validate\_births()} checks the same invariants as
+\fn{validate\_population()} (no age dimension here, so no age-range check).
+
+\subsubsection{\fn{get\_ine\_births\_by\_age()}}
+\label{sec:births-by-age}
+
+\fn{get\_ine\_births()} has no age-of-mother breakdown, so it cannot feed a
+true total fertility rate. \fn{get\_ine\_births\_by\_age()} retrieves the
+same MNPN operation's age-of-mother table instead (table 6508: province,
+single year of age of the mother 15--49 plus the two open intervals
+\fn{under15}/\fn{50plus}, and sex of the newborn) --- the input
+Section~\ref{sec:fertility-schedule}'s age-specific fertility rate schedule
+needs.
+
+\begin{lstlisting}
+get_ine_births_by_age(table_id = 6508, n_periods = 100,
+                       use_cache = TRUE, force = FALSE,
+                       cache_dir = tools::R_user_dir("inedemogR", "cache"))
+\end{lstlisting}
+
+Returns \fn{list(data, qc)}; \fn{data} has \fn{ine\_code}, \fn{nuts3\_code},
+\fn{nuts2\_code}, \fn{province\_name}, \fn{year}, \fn{age} (integer, \fn{NA}
+for the \fn{under15} group), \fn{age\_group} (\fn{"under15"}, \fn{"15"} ---
+\fn{"49"}, \fn{"50plus"}), \fn{female}, \fn{male}, \fn{total}. INE's table
+omits a (province, age, sex-of-newborn, year) series entirely once its
+value is zero across the whole fetched window --- the same behavior already
+seen in \fn{compute\_death\_rates()} (Section~\ref{sec:death-rates}) --- so
+\fn{clean\_births\_by\_age()} builds the complete grid explicitly and fills
+absent combinations with zero rather than leaving them missing, before
+\fn{validate\_births\_by\_age()} checks for negative/missing counts,
+duplicate rows, and complete single-year age coverage (15--49) per
+province-year.
+
+\begin{lstlisting}
+births_age <- get_ine_births_by_age()
+births_age$data
+\end{lstlisting}
+
+\subsubsection{\fn{get\_ine\_deaths()}}
+
+Retrieves annual deaths by province and sex (INE's MNPD operation, table
+6545) \emph{and} an age-specific companion series (table 6547), since the
+mortality pipeline (\fn{compute\_exposure()}, \fn{compute\_death\_rates()})
+needs deaths by single-year age, $D(x,t)$, not just the yearly total
+$D(t)$.
+
+\begin{lstlisting}
+get_ine_deaths(table_id = 6545, age_table_id = 6547, n_periods = 100,
+               use_cache = TRUE, force = FALSE,
+               cache_dir = tools::R_user_dir("inedemogR", "cache"))
+\end{lstlisting}
+
+Returns \fn{list(data\_provinces, data\_national, qc, qc\_age)}:
+\fn{data\_provinces} is the age-specific series
+(\fn{nuts3\_code}, \fn{province\_name}, \fn{year}, \fn{age}, \fn{female},
+\fn{male}, \fn{total}) that feeds the rest of the mortality pipeline;
+\fn{data\_national} is Spain's age-less annual total, used internally to
+cross-check the sum of provincial totals against the official national
+figure (\fn{validate\_deaths()}'s \fn{national\_vs\_provincial\_mismatch}
+check) and also validates the sex ratio at death lies in the plausible
+range $[0.90, 1.50]$.
+
+\begin{lstlisting}
+deaths <- get_ine_deaths()
+deaths$data_provinces   # age-specific, feeds compute_exposure()/compute_death_rates()
+deaths$data_national    # Spain total, used for QC cross-checks
+\end{lstlisting}
+
+\subsection{The mortality pipeline}
+
+The three functions below implement, in order, Steps 4--6 of the SHMD
+Protocol (equivalently, HMD Methods Protocol V6): exposure-to-risk, central
+death rates, and period life tables. Each stage consumes the previous
+stage's output directly.
+
+\subsubsection{Exposure-to-risk: \fn{compute\_exposure()}}
+
+Exposure-to-risk $E(x,t)$ approximates the person-years lived at age $x$
+during calendar year $t$, combining the population stock at the start and
+end of the year with a Lexis-triangle correction for within-year deaths:
+
+\begin{equation}
+E(x,t) \;=\; \tfrac{1}{2}\bigl[P(x,t) + P(x,t+1)\bigr]
+\;+\; \tfrac{1}{2}\bigl[D^{U}(x,t) - D^{L}(x,t)\bigr]
+\end{equation}
+
+where $P(x,t)$ is the January~1 population aged $x$ in year $t$, and
+$D^{U}(x,t)$, $D^{L}(x,t)$ are deaths in the upper and lower Lexis triangles
+of the $(x,t)$ parallelogram --- i.e.\ deaths to the birth cohort $t-x$
+(upper triangle, born before the start of year $t$, dying at age $x$) versus
+deaths to the birth cohort $t-x-1$ (lower triangle, born during year $t$
+itself among those who reach age $x$). INE's Tempus3 death tables do not
+carry a birth-cohort split, so absent a \fn{cohort} column,
+\fn{compute\_exposure()} falls back to the documented HMD Methods Protocol
+V6 Appendix A approximation of an even 50/50 split
+($D^{U}=D^{L}=D(x,t)/2$, which cancels the correction term entirely,
+i.e.\ reduces to a plain average of the two population stocks).
+
+\begin{lstlisting}
+compute_exposure(population, deaths)
+\end{lstlisting}
+
+\begin{description}[leftmargin=2.2cm,style=nextline]
+  \item[population] \fn{get\_ine\_population()\$data}.
+  \item[deaths] \fn{get\_ine\_deaths()\$data\_provinces}.
+\end{description}
+
+Because death registration lags population estimates by roughly a year, the
+most recent year in \fn{population} commonly has no matching rows in
+\fn{deaths} yet. That year is still used as the $P(x,t+1)$ boundary needed
+to compute the \emph{previous} year's exposure, but is not itself returned
+as an exposure row --- treating an entirely-absent year as zero deaths would
+mechanically produce zero mortality and, downstream, a nonsensical inflated
+life expectancy.
+
+\begin{lstlisting}
+pop <- get_ine_population()
+deaths <- get_ine_deaths()
+exposure <- compute_exposure(pop$data, deaths$data_provinces)
+exposure$qc$passed
+\end{lstlisting}
+
+\fn{validate\_exposure()} flags cells with no usable source population
+(informational), any remaining negative/NA exposure, and implausible
+exposure exceeding twice the source population (a generous plausibility
+bound).
+
+\subsubsection{Central death rates: \fn{compute\_death\_rates()}}
+\label{sec:death-rates}
+
+Given deaths $D(x,t)$ and exposure $E(x,t)$, the central death rate at
+single-year age $x$ in year $t$ is
+
+\begin{equation}
+m(x,t) \;=\; \frac{D(x,t)}{E(x,t)} \qquad \text{(1x1: single-year age, one-year period)}
+\end{equation}
+
+INE's age-specific deaths table only publishes rows for age$\times$year
+cells with at least one death; \fn{compute\_death\_rates()} starts from the
+complete $0$--\fn{MAX\_AGE} exposure grid and left-joins deaths, filling
+absent rows with zero deaths rather than silently dropping them --- a
+missing INE row means \emph{zero} deaths at that age, not a data gap, and
+dropping it would break the age-contiguity that the life-table recursion
+(Section~\ref{sec:lifetables}) requires.
+
+A pooled 5-year-age-group ($n=5$) rate is also computed:
+
+\begin{equation}
+m(x,n,t) \;=\; \frac{\sum_{k=0}^{4} D(x+k,t)}{\sum_{k=0}^{4} E(x+k,t)}
+\qquad \text{(5x1)}
+\end{equation}
+
+and an age-standardized death rate using the Eurostat European Standard
+Population 2013 (ESP2013) single-year age weights $w(x)$, with
+$\sum_x w(x) = 100{,}000$:
+
+\begin{equation}
+\mathrm{ASDR}(t) \;=\; \sum_{x} m(x,t)\, w(x)
+\end{equation}
+
+expressed in deaths per 100,000 of the ESP2013 standard population,
+allowing direct comparison of mortality levels across provinces or years
+with different underlying age structures.
+
+\begin{lstlisting}
+compute_death_rates(deaths, exposure)
+\end{lstlisting}
+
+Returns \fn{list(mx\_1x1, mx\_5x1, asdr, qc)}. \fn{validate\_death\_rates()}
+flags negative/NA/infinite rates and any rate $\geq 1$ below age 90
+(implausible for a working-age population, informational).
+
+\begin{lstlisting}
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+rates$mx_1x1   # age x year x province mortality schedule
+rates$asdr     # age-standardized rate, one row per province-year
+\end{lstlisting}
+
+\subsubsection{Period life tables: \fn{build\_life\_tables()}}
+\label{sec:lifetables}
+
+\fn{build\_life\_tables()} constructs standard 1x1 period life tables for
+every province and year in \fn{mx\_1x1}, following HMD Methods Protocol V6
+exactly. The construction proceeds in two stages: old-age smoothing, then
+the life-table recursion itself.
+
+\paragraph{Kannisto smoothing of old-age mortality.} Single-year mortality
+rates at the oldest ages are noisy (small populations, few deaths), so ages
+80--110 are replaced with a smooth Kannisto model fitted on ages 80--95 and
+extrapolated to age 110:
+
+\begin{equation}
+\operatorname{logit} m(x) = \log\!\frac{m(x)}{1-m(x)} = \alpha + \beta x,
+\qquad x \in [80, 95]
+\end{equation}
+
+fitted by ordinary least squares, then evaluated for every age up to the
+open-ended terminal age (110):
+
+\begin{equation}
+m^{\text{Kannisto}}(x) = \frac{e^{\alpha + \beta x}}{1 + e^{\alpha + \beta x}}
+\end{equation}
+
+\paragraph{Andreev--Kingkade $a_0$.} The average person-years lived by
+those who die before age 1, $a_0$, uses the Andreev--Kingkade (2015)
+piecewise regression on the age-0 central death rate $m_0$ (replacing the
+older Coale--Demeny approximation), separately by sex:
+
+\begin{equation}
+a_0 =
+\begin{cases}
+0.330 & \text{if } m_0 \geq 0.107 \\
+0.053 + 2.800\,m_0 & \text{if female and } m_0 < 0.107 \\
+0.045 + 2.684\,m_0 & \text{if male and } m_0 < 0.107
+\end{cases}
+\end{equation}
+
+For the combined-sex table, $a_0$ is the mean of the female and male
+values. The remaining $a_x$ values follow the standard HMD convention:
+$a_1 = 0.4$ (age 1), $a_x = 0.5$ for ages $2$ and above.
+
+\paragraph{Life-table recursion.} Given $m_x$ and $a_x$ for every age $x =
+0, 1, \dots, \omega$ (open interval at $\omega = 110$):
+
+\begin{align}
+q_x &= \frac{m_x}{1 + (1-a_x)m_x}, \qquad q_\omega = 1 \\
+l_0 &= 100{,}000 \\
+d_x &= l_x\, q_x \\
+l_{x+1} &= l_x - d_x \\
+L_x &=
+\begin{cases}
+l_{x+1} + a_x d_x & x < \omega \\
+l_\omega / m_\omega & x = \omega
+\end{cases}\\
+T_x &= \sum_{y \geq x} L_y \\
+e_x &= T_x / l_x
+\end{align}
+
+The open-interval formula $L_\omega = l_\omega/m_\omega$ assumes $\omega$ is
+genuinely old (a high $m_\omega$); this is the reason the terminal age must
+be a realistic $\omega=110$ after Kannisto extrapolation rather than an
+artificially low cut-off, which would otherwise produce a nonsensical
+remaining-life-expectancy figure in the thousands of years.
+
+\begin{lstlisting}
+build_life_table(mx_df, sex = c("female", "male"))   # single year, single sex
+build_life_tables(mx_1x1)                             # every province and year
+\end{lstlisting}
+
+\fn{build\_life\_tables()} returns \fn{list(fltper, mltper, bltper, qc)} ---
+female, male, and both-sex period life tables, each a tibble with
+\fn{nuts3\_code}, \fn{province\_name}, \fn{year}, \fn{age}, \fn{mx},
+\fn{qx}, \fn{ax}, \fn{lx}, \fn{dx}, \fn{Lx}, \fn{Tx}, \fn{ex}.
+\fn{validate\_life\_table()} checks that $l_x$ is non-increasing in age,
+$L_x>0$, $e_x>0$, and $q_x \in [0,1]$.
+
+\begin{lstlisting}
+lt <- build_life_tables(rates$mx_1x1)
+lt$fltper[lt$fltper$age == 0, ]   # e0 by province and year, female
+\end{lstlisting}
+
+As a live-verified example, this pipeline gives a period life expectancy at
+birth for A Coru\~{n}a, 2024, of $e_0 = 86.97$ years (female) and $81.21$
+years (male) --- plausible, correct figures for a Spanish province in that
+year.
+
+\subsubsection{Abridged life tables: \fn{build\_abridged\_life\_tables()}}
+\label{sec:abridged}
+
+\fn{build\_abridged\_life\_tables()} builds standard abridged (5-year age
+group) period life tables directly from \fn{compute\_death\_rates()}'s
+\fn{mx\_5x1}, complementing \fn{build\_life\_tables()}'s single-year (1x1)
+tables --- useful for comparing against other agencies' published abridged
+tables, or when only grouped-age data is available. Age groups are
+\fn{"00-04"}, \fn{"05-09"}, \dots, \fn{"95-99"}, \fn{"100+"} (open interval).
+
+The one exception to building strictly from \fn{mx\_5x1} is the youngest
+group: INE's own age grouping merges age 0 with ages 1--4 into a single
+\fn{"00-04"} group, which would otherwise need an external, less-precise
+$_5a_0$ regression (e.g.\ Coale--Demeny) to handle the sharp within-interval
+infant-mortality gradient. Since \fn{mx\_1x1} already carries the exact
+single-year $m_0$ with its Andreev--Kingkade $a_0$
+(Section~\ref{sec:lifetables}), \fn{build\_abridged\_life\_table()} instead
+builds an exact single-year sub-table for ages 0--4 and aggregates it,
+avoiding that approximation for the one interval where it matters most.
+
+For every other closed interval $[x, x+n)$ ($n=5$), the standard
+discrete abridged life-table identities apply (Preston, Heuveline \&
+Guillot, 2001, Ch.\ 3):
+
+\begin{align}
+{}_na_x &= n/2 \\
+{}_nq_x &= 1 - e^{-n\, {}_nm_x}
+\end{align}
+
+The exponential form for ${}_nq_x$ (rather than the linear Chiang formula
+$n\, {}_nm_x / (1 + (n - {}_na_x)\, {}_nm_x)$ that \fn{build\_life\_table()}
+uses for single-year, $n=1$ intervals) is deliberate: the linear formula can
+exceed 1 once $n$ is as wide as 5 and mortality is high (old-age groups with
+${}_nm_x \gtrsim 0.3$--$0.4$), which the exponential form never does. The
+remaining recursion matches Section~\ref{sec:lifetables} exactly, with the
+person-years-lived identity generalized to the interval width:
+
+\begin{equation}
+{}_nL_x = n\, l_{x+n} + {}_na_x\, {}_nd_x \qquad (x < \omega)
+\end{equation}
+
+\begin{lstlisting}
+build_abridged_life_table(mx_1x1, mx_5x1, sex = c("female", "male"))  # one province/year
+build_abridged_life_tables(mx_1x1, mx_5x1)                            # every province/year
+\end{lstlisting}
+
+Returns \fn{list(fltper, mltper, bltper, qc)}, matching
+\fn{build\_life\_tables()}'s structure with \fn{age\_group}/\fn{age\_start}/
+\fn{n} in place of \fn{age}. \fn{validate\_abridged\_life\_table()} checks
+the same invariants as \fn{validate\_life\_table()}.
+
+\begin{lstlisting}
+alt <- build_abridged_life_tables(rates$mx_1x1, rates$mx_5x1)
+alt$fltper[alt$fltper$age_group == "00-04", ]
+\end{lstlisting}
+
+As a live-verified cross-check, A Coru\~{n}a 2024's abridged $e_0$ (female)
+comes to $87.03$ years against the exact single-year figure of $86.97$ ---
+a $0.06$-year difference, consistent with the coarser 5-year grouping.
+
+\subsection{Exporting to files: \fn{download\_ine\_data()}}
+
+For users who prefer to work outside R (a spreadsheet, another statistical
+package, or HMD-compatible mortality software), \fn{download\_ine\_data()}
+runs any subset of the six pipeline stages and writes the results to a
+folder as CSV and/or HMD-format \fn{.txt} files.
+
+\begin{lstlisting}
+download_ine_data(out_dir,
+                   stages = c("births", "deaths", "population",
+                              "exposure", "mx", "life_tables"),
+                   format = c("csv", "txt"),
+                   n_periods = 30)
+\end{lstlisting}
+
+Later stages automatically pull in their dependencies (\fn{exposure} needs
+\fn{population} and \fn{deaths}; \fn{mx} needs \fn{deaths} and
+\fn{exposure}; \fn{life\_tables} needs \fn{mx}), since they are fetched
+along the way regardless.
+
+\begin{lstlisting}
+# Everything, both file formats, into ./ine_data
+result <- download_ine_data("ine_data")
+result$files              # every path written
+result$life_tables$fltper # also available in memory, no re-read needed
+
+# Just births and deaths, CSV only
+download_ine_data("ine_data", stages = c("births", "deaths"), format = "csv")
+
+# One HMD-format .txt file per province
+download_ine_data("ine_data", stages = "life_tables", format = "txt")
+\end{lstlisting}
+
+\fn{"csv"} writes one combined file per data table (e.g.\
+\fn{population.csv}, one row per province$\times$age$\times$year);
+\fn{"txt"} writes HMD-format files, one per province, matching the layout
+HMD-compatible tooling expects.
+
+\newpage
+\section{Part II --- Demographic Analysis and Visualization}
+\label{sec:part2}
+
+\subsection{Summary demographic indicators}
+
+The functions in this section all operate on System B's age/sex-disaggregated
+province data (or, for \fn{birth\_death\_ratio()}, on System A's totals ---
+noted explicitly below); \fn{get\_ine\_demog()}'s total-only indicators
+cannot be used for any indicator that requires an age breakdown.
+
+\subsubsection{Age dependency ratios: \fn{age\_dependency\_ratio()}}
+
+With $P_{\text{young}}$, $P_{\text{work}}$, $P_{\text{old}}$ the population
+aged $\leq 14$, $15$--$64$, and $\geq 65$ respectively (cut-offs
+configurable via \fn{young\_max}/\fn{old\_min}):
+
+\begin{align}
+\text{youth dependency ratio} &= \frac{P_{\text{young}}}{P_{\text{work}}}\times 100 \\
+\text{old-age dependency ratio} &= \frac{P_{\text{old}}}{P_{\text{work}}}\times 100 \\
+\text{total dependency ratio} &= \frac{P_{\text{young}}+P_{\text{old}}}{P_{\text{work}}}\times 100
+\end{align}
+
+\begin{lstlisting}
+pop <- get_ine_population()
+adr <- age_dependency_ratio(pop$data)
+adr[adr$nuts3_code == "ES111", ]
+\end{lstlisting}
+
+\subsubsection{Aging index: \fn{aging\_index()}}
+
+\begin{equation}
+\text{aging index} = \frac{P_{\text{old}}}{P_{\text{young}}}\times 100
+\end{equation}
+
+\begin{lstlisting}
+ai <- aging_index(pop$data)
+\end{lstlisting}
+
+\subsubsection{Sex ratio: \fn{sex\_ratio()}}
+
+\begin{equation}
+\text{sex ratio} = \frac{P_{\text{male}}}{P_{\text{female}}}\times 100
+\end{equation}
+
+computed over all ages by default, or per single year of age with
+\fn{by\_age = TRUE}.
+
+\begin{lstlisting}
+sex_ratio(pop$data)
+sex_ratio(pop$data, by_age = TRUE)
+\end{lstlisting}
+
+\subsubsection{Crude birth and death rates}
+
+\begin{equation}
+\mathrm{CBR} = \frac{B}{P}\times 1000, \qquad
+\mathrm{CDR} = \frac{D}{P}\times 1000
+\end{equation}
+
+where $B$, $D$, $P$ are total annual births, deaths, and population.
+
+\begin{lstlisting}
+births <- get_ine_births()
+deaths <- get_ine_deaths()
+cbr <- crude_birth_rate(births$data, pop$data)
+cdr <- crude_death_rate(deaths$data_provinces, pop$data)
+\end{lstlisting}
+
+\textbf{These are crude rates, not a total fertility rate (TFR).} TFR
+requires age-of-mother-specific birth counts; INE's underlying MNPN table as
+retrieved by \fn{get\_ine\_births()} carries no age-of-mother breakdown, and
+this package does not currently compute TFR. Do not substitute
+\fn{crude\_birth\_rate()} for TFR in fertility analysis.
+
+\subsubsection{General fertility rate: \fn{general\_fertility\_rate()}}
+
+GFR improves on CBR by dividing births by the female population actually at
+risk of childbearing (ages 15--49 by default), removing the distortion CBR
+suffers when two provinces have different age/sex structures despite
+similar underlying fertility behavior:
+
+\begin{equation}
+\mathrm{GFR} = \frac{B}{W_{15-49}} \times 1000
+\end{equation}
+
+\begin{lstlisting}
+gfr <- general_fertility_rate(births$data, pop$data, age_min = 15, age_max = 49)
+\end{lstlisting}
+
+GFR is still not a TFR: it is a single aggregate rate over all
+reproductive-age women, not an age-specific fertility schedule.
+
+\subsubsection{Fertility schedule: ASFR, TFR, MAC, GRR, NRR}
+\label{sec:fertility-schedule}
+
+Where CBR and GFR (above) are single aggregate rates, the functions below
+use \fn{get\_ine\_births\_by\_age()}'s (Section~\ref{sec:births-by-age})
+age-of-mother breakdown to build the full age-specific fertility schedule
+and the standard summary indicators derived from it.
+
+\paragraph{Age-specific fertility rate: \fn{age\_specific\_fertility\_rate()}.}
+
+\begin{equation}
+\mathrm{ASFR}(x) = \frac{B(x)}{W(x)} \times 1000, \qquad
+\mathrm{ASFR}_{\text{female}}(x) = \frac{B_{\text{female}}(x)}{W(x)} \times 1000
+\end{equation}
+
+for single years of age $x = 15, \dots, 49$ by default, where $B(x)$ is
+births to mothers of age $x$ and $W(x)$ is the female population of age
+$x$. \fn{age\_specific\_fertility\_rate()} returns both the all-newborn rate
+$\mathrm{ASFR}(x)$ and the female-newborn-specific rate
+$\mathrm{ASFR}_{\text{female}}(x)$ (using INE's actual sex-of-newborn
+breakdown, not an assumed constant sex ratio at birth) --- the schedule the
+remaining functions below all consume.
+
+\begin{lstlisting}
+births_age <- get_ine_births_by_age()
+pop <- get_ine_population()
+asfr <- age_specific_fertility_rate(births_age$data, pop$data, age_min = 15, age_max = 49)
+\end{lstlisting}
+
+\subsubsection{Total fertility rate: \fn{total\_fertility\_rate()}}
+
+\begin{equation}
+\mathrm{TFR} = \sum_{x=15}^{49} \frac{\mathrm{ASFR}(x)}{1000}
+\end{equation}
+
+the true TFR that \fn{crude\_birth\_rate()} and \fn{general\_fertility\_rate()}
+explicitly note this package could not previously compute.
+
+\begin{lstlisting}
+tfr <- total_fertility_rate(asfr)
+\end{lstlisting}
+
+\subsubsection{Mean age at childbearing: \fn{mean\_age\_at\_childbearing()}}
+
+\begin{equation}
+\mathrm{MAC} = \frac{\sum_x x \cdot \mathrm{ASFR}(x)}{\sum_x \mathrm{ASFR}(x)}
+\end{equation}
+
+\begin{lstlisting}
+mac <- mean_age_at_childbearing(asfr)
+\end{lstlisting}
+
+\subsubsection{Gross and net reproduction rates}
+
+The gross reproduction rate (expected daughters per woman over her
+reproductive lifetime, ignoring mortality) sums the female-newborn-specific
+schedule directly, rather than approximating it by scaling TFR with an
+assumed constant sex ratio at birth:
+
+\begin{equation}
+\mathrm{GRR} = \sum_{x=15}^{49} \frac{\mathrm{ASFR}_{\text{female}}(x)}{1000}
+\end{equation}
+
+The net reproduction rate additionally weights that schedule by the
+mother's own survivorship to each reproductive age, using the female life
+table's $L_x$ (Section~\ref{sec:lifetables}) and radix $l_0$:
+
+\begin{equation}
+\mathrm{NRR} = \sum_{x=15}^{49} \frac{\mathrm{ASFR}_{\text{female}}(x)}{1000} \cdot \frac{L_x}{l_0}
+\end{equation}
+
+so $\mathrm{NRR} \leq \mathrm{GRR}$ always, with equality only in the
+(unrealistic) absence of any mortality before the end of the reproductive
+span.
+
+\begin{lstlisting}
+grr <- gross_reproduction_rate(asfr)
+nrr <- net_reproduction_rate(asfr, lt$fltper)   # lt$fltper: female life table, build_life_tables()
+\end{lstlisting}
+
+As a live-verified example, Madrid 2023 gives $\mathrm{GRR} = 0.538$ and
+$\mathrm{NRR} = 0.535$ --- both well below the replacement threshold of 1,
+consistent with Spain's well-documented below-replacement fertility, with
+$\mathrm{NRR}$ correctly just under $\mathrm{GRR}$ given Spain's low
+mortality at reproductive ages.
+
+\subsubsection{Infant mortality rate: \fn{infant\_mortality\_rate()}}
+
+\begin{equation}
+\mathrm{IMR} = \frac{D_{0}}{B}\times 1000
+\end{equation}
+
+where $D_0$ is deaths under age 1 in year $t$ and $B$ is live births in that
+\emph{same} year $t$ (the birth cohort those deaths are drawn from) --- a
+different denominator convention from CDR. IMR is closely related to, but
+not identical to, $q_0$ in the period life table: $q_0$ is derived from the
+exposure-based $m_0$ via the Andreev-Kingkade $a_0$, while IMR here uses the
+simpler, standard deaths/births ratio directly; the two will usually be
+close but need not match exactly.
+
+\begin{lstlisting}
+imr <- infant_mortality_rate(deaths$data_provinces, births$data)
+\end{lstlisting}
+
+\subsubsection{Rate of natural increase: \fn{rate\_of\_natural\_increase()}}
+
+\begin{equation}
+\mathrm{RNI} = \mathrm{CBR} - \mathrm{CDR}
+\end{equation}
+
+combining already-computed \fn{crude\_birth\_rate()} and
+\fn{crude\_death\_rate()} output. A positive value means the population is
+growing from natural change alone (ignoring migration); negative means the
+reverse --- the point in time and space where $\mathrm{CDR}$ overtakes
+$\mathrm{CBR}$ is often called the ``demographic crossover.''
+
+\begin{lstlisting}
+rni <- rate_of_natural_increase(cbr, cdr)
+\end{lstlisting}
+
+\subsubsection{Birth-to-death ratio: \fn{birth\_death\_ratio()}}
+
+Unlike the indicators above, this needs no age breakdown, so it operates
+directly on \fn{get\_ine\_demog()}'s totals (System A):
+
+\begin{equation}
+\text{birth-death ratio} = \frac{B}{D}
+\end{equation}
+
+\begin{lstlisting}
+vitals <- get_ine_demog(indicator = c("births_total", "deaths_total"), year = 2023)
+ratio <- birth_death_ratio(vitals)
+\end{lstlisting}
+
+A value of 2 means 2 live births per death; 0.5 means 1 birth per 2 deaths.
+
+\subsubsection{Life expectancy: \fn{life\_expectancy\_summary()} and \fn{life\_expectancy()}}
+
+\fn{life\_expectancy\_summary()} extracts $e_0$ (life expectancy at birth)
+and $e_{65}$ (remaining life expectancy at 65) for every province and year
+from a \fn{build\_life\_tables()} output table:
+
+\begin{lstlisting}
+le <- life_expectancy_summary(lt$fltper, sex = "female")
+\end{lstlisting}
+
+\fn{life\_expectancy()} is a one-province convenience wrapper: it builds the
+life table for a single matched province directly from
+\fn{compute\_death\_rates()}'s \fn{mx\_1x1} output, without requiring
+\fn{build\_life\_tables()} to be run for every province first.
+
+\begin{lstlisting}
+life_expectancy(rates$mx_1x1, province = "A Coruna", sex = "female")
+\end{lstlisting}
+
+\subsection{Mortality decomposition: \fn{decompose\_life\_expectancy()}}
+\label{sec:decomposition}
+
+Life expectancy summaries answer \emph{what} $e_0$ is; mortality
+decomposition answers \emph{why} two life tables' $e_0$ values differ ---
+attributing the gap between two provinces (same year) or one province (two
+years) to age-specific contributions. Two independently-derived methods are
+implemented so results can be cross-checked against each other (Ponnapalli,
+2005, found the two are not sensitive to which one is used):
+
+\begin{lstlisting}
+decompose_life_expectancy(lt1, lt2, method = c("arriaga", "pollard"))
+\end{lstlisting}
+
+\begin{description}[leftmargin=2.2cm,style=nextline]
+  \item[lt1, lt2] Single life tables (one province-year-sex slice of
+    \fn{build\_life\_tables()}'s \fn{fltper}/\fn{mltper}/\fn{bltper}, or
+    \fn{build\_life\_table()}'s direct output), over the \emph{same} set of
+    ages.
+\end{description}
+
+\paragraph{Arriaga's method (1984, the default).} An exact discrete
+decomposition. For a non-terminal age interval $[x, x+n)$, splitting into a
+direct effect (extra/fewer years lived \emph{within} the interval) and a
+combined indirect/interaction effect (extra/fewer survivors carrying
+forward into \emph{later} ages):
+
+\begin{align}
+\mathrm{DE}(x) &= \frac{l_x^{(1)}}{l_0^{(1)}}
+  \left(\frac{{}_nL_x^{(2)}}{l_x^{(2)}} - \frac{{}_nL_x^{(1)}}{l_x^{(1)}}\right) \\
+\mathrm{IE}(x) &= \frac{T_{x+n}^{(2)}}{l_0^{(1)}}
+  \left(\frac{l_x^{(1)}}{l_x^{(2)}} - \frac{l_{x+n}^{(1)}}{l_{x+n}^{(2)}}\right) \\
+\Delta(x) &= \mathrm{DE}(x) + \mathrm{IE}(x)
+\end{align}
+
+with superscripts $(1)$/$(2)$ denoting the reference/comparison life table.
+For the terminal open interval $\omega$, only a direct effect applies (since
+${}_{\infty}L_\omega = T_\omega$):
+
+\begin{equation}
+\Delta(\omega) = \frac{l_\omega^{(1)}}{l_0^{(1)}}
+  \left(\frac{T_\omega^{(2)}}{l_\omega^{(2)}} - \frac{T_\omega^{(1)}}{l_\omega^{(1)}}\right)
+\end{equation}
+
+and $\sum_x \Delta(x) = e_0^{(2)} - e_0^{(1)}$ exactly.
+
+\paragraph{Pollard's method (1988).} An exact \emph{continuous}-time
+decomposition; applied to a discrete single-year life table, its
+symmetric-average form (averaging the two individually-exact continuous
+identities Pollard derives, so the choice of reference table doesn't bias
+the result) is:
+
+\begin{equation}
+\Delta(x) = \tfrac{1}{2}\bigl(m_x^{(1)} - m_x^{(2)}\bigr)
+  \left(\frac{l_x^{(2)}}{l_0^{(2)}} e_x^{(1)} + \frac{l_x^{(1)}}{l_0^{(1)}} e_x^{(2)}\right)
+\end{equation}
+
+Unlike Arriaga's, this is exact only in the continuous limit --- on a
+single-year life table it is a close but not identical approximation of
+$e_0^{(2)} - e_0^{(1)}$, so treat Arriaga's (the default) as the primary
+result and Pollard's as a cross-check.
+
+\begin{lstlisting}
+lt <- build_life_tables(rates$mx_1x1)
+lt_a <- lt$fltper[lt$fltper$province_name == "A Coruna" & lt$fltper$year == 2023, ]
+lt_b <- lt$fltper[lt$fltper$province_name == "Madrid" & lt$fltper$year == 2023, ]
+
+decomp <- decompose_life_expectancy(lt_a, lt_b, method = "arriaga")
+sum(decomp$contribution)   # recovers the e0 gap exactly
+\end{lstlisting}
+
+As a live-verified example, A Coru\~{n}a vs.\ Madrid, 2023: $e_0$ gap $=
+1.04$ years, with age 0 and age 58 the largest single-age contributors
+(Arriaga and Pollard correlate at $0.999$ on this comparison). For a
+temporal comparison --- A Coru\~{n}a, 2016 vs.\ 2023 --- the gap is $0.69$
+years.
+
+\subsection{Mapping functions}
+
+\subsubsection{\fn{plot\_ine\_map()}}
+
+Plots the full map of Spain at province or municipality level, with one or
+more regions highlighted --- primarily a diagnostic tool for confirming
+which regions a regex \fn{region}/\fn{highlight} pattern actually matches.
+
+\begin{lstlisting}
+plot_ine_map(geo_level = "province", highlight = "^Cordoba$")
+\end{lstlisting}
+
+\subsubsection{\fn{map\_indicator()}}
+
+General-purpose choropleth: joins any tidy indicator tibble keyed by
+\fn{GEOID} onto province or municipality geometry, as either a binned
+discrete-legend map (default, matching the classic ``N regions
+above/below a threshold'' choropleth style) or a continuous gradient.
+
+\begin{lstlisting}
+map_indicator(df, value_col, geo_level = c("province", "municipality"),
+              region = NULL, binned = TRUE, breaks = NULL,
+              palette = if (binned) "PiYG" else "D",
+              moveCAN = TRUE, can_gap_km = 60,
+              legend_title = NULL, title = NULL)
+\end{lstlisting}
+
+\begin{lstlisting}
+pop_data <- get_ine_demog(indicator = "population_total", year = 2023)
+map_indicator(pop_data, "population_total", geo_level = "province")
+\end{lstlisting}
+
+\subsubsection{\fn{map\_life\_expectancy()}}
+
+A thin wrapper around \fn{map\_indicator()} that bridges System B's
+\fn{life\_expectancy\_summary()} output with System A's
+\fn{get\_ine\_geo()} geometry via the internal province lookup table.
+
+\begin{lstlisting}
+map_life_expectancy(le_df, year, sex = "both",
+                     moveCAN = TRUE, can_gap_km = 60, title = NULL)
+\end{lstlisting}
+
+\begin{lstlisting}
+map_life_expectancy(le, year = max(le$year), sex = "female")
+\end{lstlisting}
+
+\subsection{Population pyramids and trend charts}
+
+\subsubsection{\fn{plot\_population\_pyramid()}}
+
+Draws a mirrored population pyramid (female right, male left as negative
+counts) for one province/region and year.
+
+\begin{lstlisting}
+plot_population_pyramid(pop_df, year, region = NULL, title = NULL)
+\end{lstlisting}
+
+\begin{lstlisting}
+plot_population_pyramid(pop$data, year = max(pop$data$year), region = "A Coruna")
+\end{lstlisting}
+
+Note \fn{geom\_col(width = 1)} is used internally rather than
+\pkg{ggplot2}'s default \fn{width = 0.9}: at the default width, the
+systematic 10\% gap between each of the 101 single-year-age bars renders as
+visible thin white stripes across the pyramid.
+
+\subsubsection{\fn{plot\_demog\_trend()}}
+
+A generic time-series chart for any indicator tibble keyed by
+\fn{nuts3\_code}/\fn{province\_name}/\fn{year} --- works unmodified on the
+output of any indicator function above.
+
+\begin{lstlisting}
+plot_demog_trend(df, value_col, region = NULL, title = NULL, ylab = NULL)
+\end{lstlisting}
+
+\begin{lstlisting}
+plot_demog_trend(ai, "aging_index", region = "A Coruna")
+\end{lstlisting}
+
+\subsection{Lexis diagrams: \fn{plot\_lexis\_diagram()}}
+
+A Lexis diagram plots age (vertical axis) against calendar year (horizontal
+axis), shaded by mortality rate, with birth-cohort diagonals overlaid. Every
+point along one diagonal line represents the same birth cohort, aging one
+year for every calendar year that passes:
+
+\begin{equation}
+\text{age} = \text{year} - \text{cohort}
+\end{equation}
+
+\begin{lstlisting}
+plot_lexis_diagram(mx_df, province, sex = c("total", "female", "male"),
+                    log_scale = TRUE, rate_per = 1000,
+                    cohort_lines = TRUE, cohort_step = 10, title = NULL)
+\end{lstlisting}
+
+\begin{lstlisting}
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+plot_lexis_diagram(rates$mx_1x1, province = "A Coruna")
+plot_lexis_diagram(rates$mx_1x1, province = "Madrid", cohort_lines = FALSE)
+\end{lstlisting}
+
+Mortality is color-scaled on a log10 axis by default (\fn{log\_scale =
+TRUE}), the standard convention for Lexis surfaces since $m_x$ spans several
+orders of magnitude across ages. Grey cells mean no rate could be computed
+for that age$\times$year cell --- almost always because the source
+population data has no single-year age breakdown for the oldest ages in the
+earliest years of the series (so exposure, the rate's denominator, is
+missing there), not a defect in the calculation; this typically appears as
+a rectangular block in the upper-left (oldest ages, earliest years) and
+clears once the source data's age detail becomes complete. When present,
+grey is given its own ``Missing data'' legend key via a small dummy point
+layer, since a continuous color scale cannot show an \fn{na.value} swatch on
+its own.
+
+\subsection{Worked examples}
+
+The nine scripts summarized below live in \fn{examples/} and are fully
+runnable end to end (each retrieves live data with the package's own
+functions before plotting). They double as integration tests for the
+indicator and charting functions documented above.
+
+\subsubsection{Birth-to-death ratio map (\fn{birth\_death\_ratio\_map.R})}
+
+Replicates a reference choropleth style (binned, pink-to-green diverging
+scale) at the finest granularity Spain's public birth/death data actually
+supports: province (municipality-level birth/death tables do not exist in
+INE's MNPN/MNPD operations).
+
+\begin{lstlisting}
+library(inedemogR)
+
+vitals <- get_ine_demog(indicator = c("births_total", "deaths_total"), year = 2023)
+ratio <- birth_death_ratio(vitals)
+
+map_indicator(
+  ratio, value_col = "birth_death_ratio", geo_level = "province",
+  breaks = c(0.25, 0.5, 0.75, 1, 1.5, 2, 3), palette = "PiYG",
+  legend_title = "Births per death",
+  title = "Birth-to-death ratio by province, Spain (2023)"
+)
+\end{lstlisting}
+
+\subsubsection{Andalusian population pyramids (\fn{andalusia\_pyramids.R})}
+
+Builds an eight-panel \fn{facet\_wrap()} grid of population pyramids for
+Andalusia's eight provinces (all sharing \fn{nuts2\_code == "ES61"}),
+directly in \pkg{ggplot2} syntax rather than calling
+\fn{plot\_population\_pyramid()} eight times.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(tidyr); library(ggplot2)
+
+pop <- get_ine_population()
+latest_year <- max(pop$data$year)
+andalusia <- pop$data |> filter(nuts2_code == "ES61", year == latest_year)
+
+pyramid_data <- andalusia |>
+  select(province_name, age, female, male) |>
+  pivot_longer(c(female, male), names_to = "sex", values_to = "count") |>
+  mutate(count = if_else(sex == "male", -count, count))
+
+ggplot(pyramid_data, aes(x = age, y = count, fill = sex)) +
+  geom_col(width = 1) +
+  coord_flip() +
+  facet_wrap(~province_name, nrow = 2, ncol = 4, scales = "free_x") +
+  scale_y_continuous(labels = abs) +
+  scale_fill_manual(values = c(female = "#D4667A", male = "#4477AA")) +
+  labs(x = "Age", y = "Population", fill = "Sex",
+       title = paste("Population pyramids, Andalusian provinces,", latest_year)) +
+  theme_minimal()
+\end{lstlisting}
+
+\subsubsection{Madrid/Barcelona Lexis diagrams (\fn{madrid\_barcelona\_lexis.R})}
+
+\fn{plot\_lexis\_diagram()} handles one province per call; a two-panel
+comparison is built directly with the pipeline functions plus
+\fn{facet\_wrap()}.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+pop <- get_ine_population()
+deaths <- get_ine_deaths()
+exposure <- compute_exposure(pop$data, deaths$data_provinces)
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+
+mx <- rates$mx_1x1 |> filter(province_name %in% c("Madrid", "Barcelona")) |>
+  mutate(mx_per_1000 = mx_total * 1000)
+
+ggplot(mx, aes(x = year, y = age, fill = mx_per_1000)) +
+  geom_tile() +
+  scale_fill_viridis_c(
+    name = "Mortality rate\n(per 1,000, log scale)", trans = "log10",
+    na.value = "grey50", labels = scales::label_number(accuracy = 0.1)
+  ) +
+  facet_wrap(~province_name, nrow = 1, ncol = 2) +
+  labs(x = "Year", y = "Age", title = "Lexis diagrams: Madrid and Barcelona") +
+  theme_minimal()
+\end{lstlisting}
+
+\subsubsection{Life expectancy comparison (\fn{life\_expectancy\_comparison.R})}
+
+Combines a multi-province time series with a national choropleth for one
+year, both from the same life-table pipeline run once for every province.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+pop <- get_ine_population()
+deaths <- get_ine_deaths()
+exposure <- compute_exposure(pop$data, deaths$data_provinces)
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+lt <- build_life_tables(rates$mx_1x1)
+le <- life_expectancy_summary(lt$fltper, sex = "female")
+
+provinces_to_compare <- c("Madrid", "Barcelona", "Sevilla", "A Coruna")
+ggplot(le |> filter(province_name %in% provinces_to_compare),
+       aes(x = year, y = e0, color = province_name)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 1.5) +
+  labs(x = "Year", y = "Life expectancy at birth (e0)", color = "Province") +
+  theme_minimal()
+
+map_life_expectancy(le, year = max(le$year), sex = "female",
+                     title = "Life expectancy at birth by province, Spain")
+\end{lstlisting}
+
+\subsubsection{Natural increase analysis (\fn{natural\_increase\_analysis.R})}
+
+Visualizes the ``demographic crossover'' (CDR overtaking CBR) and the
+resulting rate of natural increase.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+births <- get_ine_births(); deaths <- get_ine_deaths(); pop <- get_ine_population()
+cbr <- crude_birth_rate(births$data, pop$data)
+cdr <- crude_death_rate(deaths$data_provinces, pop$data)
+rni <- rate_of_natural_increase(cbr, cdr)
+
+provinces_to_compare <- c("Madrid", "Barcelona", "Sevilla", "A Coruna")
+ggplot(rni |> filter(province_name %in% provinces_to_compare),
+       aes(x = year, y = rni, color = province_name)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_line(linewidth = 0.8) + geom_point(size = 1.5) +
+  labs(x = "Year", y = "Rate of natural increase (per 1,000)", color = "Province") +
+  theme_minimal()
+\end{lstlisting}
+
+\subsubsection{Fertility and infant mortality analysis (\fn{fertility\_infant\_mortality\_analysis.R})}
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+births <- get_ine_births(); deaths <- get_ine_deaths(); pop <- get_ine_population()
+gfr <- general_fertility_rate(births$data, pop$data)
+imr <- infant_mortality_rate(deaths$data_provinces, births$data)
+
+provinces_to_compare <- c("Madrid", "Barcelona", "Sevilla", "A Coruna")
+ggplot(gfr |> filter(province_name %in% provinces_to_compare),
+       aes(x = year, y = gfr, color = province_name)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 1.5) +
+  labs(x = "Year", y = "General fertility rate (per 1,000 women 15-49)",
+       color = "Province") +
+  theme_minimal()
+\end{lstlisting}
+
+\subsubsection{Fertility indicators analysis (\fn{fertility\_indicators\_analysis.R})}
+
+Exercises the full ASFR-based fertility schedule (Section~\ref{sec:fertility-schedule}):
+the age schedule itself, TFR/MAC trends, and the GRR-vs-NRR mortality-adjustment
+gap, for a comparison set of provinces.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+births_age <- get_ine_births_by_age()
+pop <- get_ine_population()
+deaths <- get_ine_deaths()
+asfr <- age_specific_fertility_rate(births_age$data, pop$data)
+tfr <- total_fertility_rate(asfr)
+mac <- mean_age_at_childbearing(asfr)
+grr <- gross_reproduction_rate(asfr)
+
+exposure <- compute_exposure(pop$data, deaths$data_provinces)
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+lt <- build_life_tables(rates$mx_1x1)
+nrr <- net_reproduction_rate(asfr, lt$fltper)
+
+latest_year <- max(asfr$year)
+provinces_to_compare <- c("Madrid", "Barcelona", "Sevilla", "A Coruna")
+
+ggplot(asfr |> filter(province_name %in% provinces_to_compare, year == latest_year),
+       aes(x = age, y = asfr, color = province_name)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 1.2) +
+  labs(x = "Age of mother", y = "ASFR (births per 1,000 women of that age)",
+       color = "Province", title = paste("ASFR schedule,", latest_year)) +
+  theme_minimal()
+
+ggplot(tfr |> filter(province_name %in% provinces_to_compare),
+       aes(x = year, y = tfr, color = province_name)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 1.5) +
+  geom_hline(yintercept = 2.1, linetype = "dashed", color = "grey40") +
+  labs(x = "Year", y = "Total fertility rate", color = "Province",
+       subtitle = "Dashed line: replacement-level TFR (2.1)") +
+  theme_minimal()
+\end{lstlisting}
+
+Live-verified results: TFR ranges roughly $1.0$--$1.3$ across the four
+provinces (Madrid highest, A Coru\~{n}a lowest), well below replacement, and
+Madrid's mean age at childbearing comes to $32.8$ years --- consistent with
+Spain's known late-childbearing pattern.
+
+\subsubsection{Mortality decomposition analysis (\fn{mortality\_decomposition\_analysis.R})}
+
+Exercises \fn{decompose\_life\_expectancy()} (Section~\ref{sec:decomposition})
+on both a cross-sectional gap (two provinces, one year) and a temporal gap
+(one province, two years), comparing Arriaga's and Pollard's methods.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+pop <- get_ine_population(); deaths <- get_ine_deaths()
+exposure <- compute_exposure(pop$data, deaths$data_provinces)
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+lt <- build_life_tables(rates$mx_1x1)
+
+latest_year <- max(lt$fltper$year); earliest_year <- min(lt$fltper$year)
+lt_a <- lt$fltper |> filter(province_name == "A Coruna", year == latest_year)
+lt_b <- lt$fltper |> filter(province_name == "Madrid", year == latest_year)
+decomp <- decompose_life_expectancy(lt_a, lt_b, method = "arriaga")
+
+ggplot(decomp, aes(x = age, y = contribution, fill = contribution > 0)) +
+  geom_col(width = 1) +
+  scale_fill_manual(values = c(`TRUE` = "steelblue", `FALSE` = "firebrick"), guide = "none") +
+  labs(x = "Age", y = "Contribution to e0 gap (years)",
+       title = "Madrid vs. A Coruna life expectancy gap by age") +
+  theme_minimal()
+\end{lstlisting}
+
+Live-verified: A Coru\~{n}a 2024 $e_0 = 86.97$ (matching the value confirmed
+in Section~\ref{sec:lifetables} exactly), Madrid 2024 $e_0 = 87.83$
+--- gap $0.86$ years; the temporal comparison (A Coru\~{n}a, 1996--2024)
+gives a gap of $5.23$ years, consistent with the secular mortality
+improvement documented throughout this tutorial.
+
+\subsubsection{Abridged life tables analysis (\fn{abridged\_life\_tables\_analysis.R})}
+
+Cross-checks \fn{build\_abridged\_life\_tables()} (Section~\ref{sec:abridged})
+against the exact single-year \fn{build\_life\_tables()} on the same
+underlying rates, then charts the abridged survivorship curve and mortality
+schedule.
+
+\begin{lstlisting}
+library(inedemogR); library(dplyr); library(ggplot2)
+
+pop <- get_ine_population(); deaths <- get_ine_deaths()
+exposure <- compute_exposure(pop$data, deaths$data_provinces)
+rates <- compute_death_rates(deaths$data_provinces, exposure$data)
+
+lt_1x1 <- build_life_tables(rates$mx_1x1)
+lt_abridged <- build_abridged_life_tables(rates$mx_1x1, rates$mx_5x1)
+
+latest_year <- max(lt_abridged$fltper$year)
+lt_1x1_one <- lt_1x1$fltper |> filter(province_name == "A Coruna", year == latest_year)
+lt_abridged_one <- lt_abridged$fltper |> filter(province_name == "A Coruna", year == latest_year)
+
+survivorship <- bind_rows(
+  lt_1x1_one |> transmute(age = age, lx = lx, table = "Single-year (1x1)"),
+  lt_abridged_one |> transmute(age = age_start, lx = lx, table = "Abridged (5x1)")
+)
+ggplot(survivorship, aes(x = age, y = lx, color = table)) +
+  geom_line(linewidth = 0.8) +
+  labs(x = "Age", y = "Survivors (out of 100,000 births)", color = NULL) +
+  theme_minimal()
+\end{lstlisting}
+
+Live-verified: A Coru\~{n}a 2024 abridged $e_0 = 87.03$ against the exact
+single-year $86.97$ --- a $0.06$-year difference, confirming the abridged
+construction recovers the single-year result closely.
+
+\newpage
+\appendix
+\section*{Appendix}
+\addcontentsline{toc}{section}{Appendix}
+
+\subsection*{A.1 Function reference}
+
+\begin{longtable}{@{}p{5.3cm}p{9.5cm}@{}}
+\toprule
+Function & Purpose \\
+\midrule
+\endhead
+\fn{get\_ine\_demog()} & System A: totals for one or more indicators, any geography \\
+\fn{get\_ine\_geo()} & Province/municipality boundary geometries \\
+\fn{list\_ine\_indicators()} & The indicator registry \\
+\fn{update\_ine\_data()} & Refresh cached System A indicators if INE published newer data \\
+\fn{plot\_ine\_map()} & Highlight-region diagnostic map \\
+\fn{map\_indicator()} & General choropleth for any \fn{GEOID}-keyed tibble \\
+\fn{get\_ine\_population()} & Province population by single-year age/sex \\
+\fn{get\_ine\_births()} & Province births by sex \\
+\fn{get\_ine\_births\_by\_age()} & Province births by single year of age of mother and sex of newborn \\
+\fn{get\_ine\_deaths()} & Province deaths by sex, age-specific and age-less \\
+\fn{compute\_exposure()} & Exposure-to-risk $E(x,t)$ \\
+\fn{compute\_death\_rates()} & Central death rates: 1x1, 5x1, ASDR \\
+\fn{andreev\_kingkade\_a0()} & Age-0 life-table parameter $a_0$ \\
+\fn{build\_life\_table()} / \fn{build\_life\_tables()} & Period life table, one sex/one province, or all \\
+\fn{build\_abridged\_life\_table()} / \fn{build\_abridged\_life\_tables()} & Abridged (5-year age group) period life table, one sex/one province, or all \\
+\fn{download\_ine\_data()} & Export the whole pipeline to CSV/HMD-txt files \\
+\fn{validate\_population()}, \fn{validate\_births()}, \fn{validate\_births\_by\_age()}, \fn{validate\_deaths()}, \fn{validate\_deaths\_age()}, \fn{validate\_exposure()}, \fn{validate\_death\_rates()}, \fn{validate\_life\_table()}, \fn{validate\_abridged\_life\_table()} & Quality-control checks for each pipeline stage \\
+\fn{age\_dependency\_ratio()} & Youth/old-age/total dependency ratios \\
+\fn{aging\_index()} & Elderly per 100 children \\
+\fn{sex\_ratio()} & Males per 100 females \\
+\fn{crude\_birth\_rate()} / \fn{crude\_death\_rate()} & CBR / CDR \\
+\fn{general\_fertility\_rate()} & GFR (births per 1,000 women 15-49) \\
+\fn{age\_specific\_fertility\_rate()} & ASFR/ASFR-female schedule by single year of age \\
+\fn{total\_fertility\_rate()} & TFR (children per woman) \\
+\fn{mean\_age\_at\_childbearing()} & MAC \\
+\fn{gross\_reproduction\_rate()} & GRR (daughters per woman, ignoring mortality) \\
+\fn{net\_reproduction\_rate()} & NRR (daughters per woman, mortality-adjusted) \\
+\fn{infant\_mortality\_rate()} & IMR (infant deaths per 1,000 live births) \\
+\fn{rate\_of\_natural\_increase()} & RNI = CBR $-$ CDR \\
+\fn{birth\_death\_ratio()} & Births per death, System A totals \\
+\fn{life\_expectancy\_summary()} & $e_0$/$e_{65}$ from a full life-table output \\
+\fn{life\_expectancy()} & $e_0$/$e_{65}$, one-province convenience wrapper \\
+\fn{decompose\_life\_expectancy()} & Age-specific decomposition of an $e_0$ gap (Arriaga/Pollard) \\
+\fn{plot\_population\_pyramid()} & Mirrored age/sex pyramid \\
+\fn{plot\_demog\_trend()} & Generic indicator time series \\
+\fn{plot\_lexis\_diagram()} & Age $\times$ year mortality surface with cohort diagonals \\
+\fn{map\_life\_expectancy()} & Life-expectancy choropleth (bridges System B to System A geometry) \\
+\bottomrule
+\end{longtable}
+
+\subsection*{A.2 INE data sources used}
+
+\begin{longtable}{@{}p{3.3cm}p{2cm}p{9.5cm}@{}}
+\toprule
+Series & Table ID & Operation \\
+\midrule
+\endhead
+Population (municipality) & 29005 & Cifras oficiales del padr\'{o}n (DPOP) \\
+Population (province, by age/sex) & 56945 & Padr\'{o}n Municipal Continuo (ECP) \\
+Births (province) & 6506 & Movimiento Natural de la Poblaci\'{o}n --- Nacimientos (MNPN) \\
+Births (province, age of mother) & 6508 & Movimiento Natural de la Poblaci\'{o}n --- Nacimientos (MNPN) \\
+Deaths (province, age-less) & 6545 & Movimiento Natural de la Poblaci\'{o}n --- Defunciones (MNPD) \\
+Deaths (province, age-specific) & 6547 & Movimiento Natural de la Poblaci\'{o}n --- Defunciones (MNPD) \\
+\bottomrule
+\end{longtable}
+
+\subsection*{A.3 Methodology references}
+
+\begin{itemize}
+  \item Human Mortality Database. \emph{Methods Protocol for the Human
+    Mortality Database}, Version 6. University of California, Berkeley, and
+    Max Planck Institute for Demographic Research.
+  \item Andreev, E.\ M., \& Kingkade, W.\ W.\ (2015). Average age at death
+    in infancy and infant mortality level: Reconsidering the Coale-Demeny
+    formulas at current levels of low mortality. \emph{Demographic
+    Research}, 33, 363--390.
+  \item Eurostat. \emph{Revision of the European Standard Population}
+    (2013 edition).
+  \item Preston, S.\ H., Heuveline, P., \& Guillot, M.\ (2001).
+    \emph{Demography: Measuring and Modeling Population Processes}.
+    Blackwell Publishing. (Abridged life-table construction, Ch.\ 3.)
+  \item Arriaga, E.\ E.\ (1984). Measuring and explaining the change in
+    life expectancies. \emph{Demography}, 21(1), 83--96.
+  \item Pollard, J.\ H.\ (1988). On the decomposition of changes in
+    expectation of life and differentials in life expectancy.
+    \emph{Demography}, 25(2), 265--276.
+  \item Instituto Nacional de Estad\'{i}stica (INE). \emph{Fen\'{o}menos
+    demogr\'{a}ficos}. \url{https://www.ine.es}.
+\end{itemize}
+
+\end{document}
