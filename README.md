@@ -1,5 +1,5 @@
 
-# inedemogR
+# inedemogR <img align="left" width="15%" src="sticker/inedemogR_sticker.png"> 
 
 <!-- badges: start -->
 <!-- badges: end -->
