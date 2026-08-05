@@ -18,7 +18,9 @@ You can install the development version of inedemogR from
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("jrcarob/inedemogR")
+pak::pak('jrcarob/inedemogR_package')
+or 
+devtools::install_github("jrcarob/inedemogR_package")
 ```
 
 ## Example
