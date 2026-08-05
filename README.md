@@ -127,5 +127,4 @@ SHMD mortality pipeline, with summary indicators
 `map_life_expectancy()`) built on top. A comprehensive tutorial covering
 every function, the mortality-pipeline mathematics, and full worked
 examples is available via `vignette("inedemogR-tutorial")`.
-Cleaning/harmonization helpers and projections are planned — see
-`docs/JOSS_PAPER_PLAN.md` for the roadmap.
+Cleaning/harmonization helpers and projections are planned.
