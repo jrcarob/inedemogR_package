@@ -13,7 +13,9 @@ integration via [mapSpain](https://ropenspain.github.io/mapSpain/) and `sf`.
 
 ## Installation
 
-You can install the development version of inedemogR from
+You can install from [CRAN](https://cran.r-project.org/web/packages/inedemogR/index.html)
+
+Alternatively, you can install the development version of inedemogR from
 [GitHub](https://github.com/) with:
 
 ``` r
