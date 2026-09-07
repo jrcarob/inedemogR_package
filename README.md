@@ -13,7 +13,11 @@ integration via [mapSpain](https://ropenspain.github.io/mapSpain/) and `sf`.
 
 ## Installation
 
-You can install from [CRAN](https://cran.r-project.org/web/packages/inedemogR/index.html)
+`inedemogR` is on [CRAN](https://cran.r-project.org/web/packages/inedemogR/index.html). Install the released version with:
+
+``` r
+install.packages("inedemogR")
+```
 
 Alternatively, you can install the development version of inedemogR from
 [GitHub](https://github.com/) with:
@@ -130,3 +134,22 @@ SHMD mortality pipeline, with summary indicators
 every function, the mortality-pipeline mathematics, and full worked
 examples is available via `vignette("inedemogR-tutorial")`.
 Cleaning/harmonization helpers and projections are planned.
+
+## Citation
+
+If you use `inedemogR` in your work, please cite it. Run
+`citation("inedemogR")` for the current entry, or use:
+
+> Caro-Barrera, J. R. (2026). *inedemogR: Tidy Access to Spanish INE
+> Demographic Data*. R package version 0.1.0.
+> <https://CRAN.R-project.org/package=inedemogR>
+
+``` bibtex
+@Manual{inedemogR,
+  title  = {inedemogR: Tidy Access to Spanish INE Demographic Data},
+  author = {J. R. Caro-Barrera},
+  year   = {2026},
+  note   = {R package version 0.1.0},
+  url    = {https://CRAN.R-project.org/package=inedemogR},
+}
+```
