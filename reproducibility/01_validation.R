@@ -1,4 +1,4 @@
-# Validation study for inedemogR 0.2.0 (SoftwareX revision).
+# Validation study for inedemogR 0.2.0 (SoftwareX article).
 #
 # Uses only the frozen inputs in reproducibility/data (see
 # 00_freeze_inputs.R), so every number is reproducible offline:

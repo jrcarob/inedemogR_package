@@ -1,7 +1,7 @@
-# Regression tests for the defects demonstrated in the SoftwareX review of
-# version 0.1.0 (SOFTX-D-26-01227, Reviewer 3's attached script), plus the
-# deterministic identity tests the reviewers requested. Each block states the
-# correct expected behaviour; the 0.1.0 result is noted in a comment.
+# Regression tests for the numerical errors corrected in version 0.2.0, plus
+# deterministic tests of life-table, decomposition and standardisation
+# identities. Each block states the correct expected behaviour; the 0.1.0
+# result is noted in a comment.
 
 flat_counts <- function(age = 0:100, years = 2024, value = 1000) {
   df <- expand.grid(age = age, year = years)

@@ -1,10 +1,11 @@
 # inedemogR 0.2.0
 
-This update corrects numerical errors in 0.1.0 identified in a methodological
+This release corrects numerical errors in 0.1.0 identified in a methodological
 audit and validation of the package against the Human Mortality Database
-protocol and the official tables of the Spanish statistics institute (INE),
-so that users of the CRAN version obtain correct results. Main changes (see
-NEWS.md):
+protocol and the official tables of the Spanish statistics institute (INE).
+Several corrections change numerical results; their effect on every number
+reported in the accompanying article is tabulated by
+`reproducibility/02_manuscript_numbers.R` in the GitHub repository.
 
 ## Breaking changes and corrected results
 
