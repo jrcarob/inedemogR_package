@@ -16,7 +16,9 @@ test_that("compute_death_rates treats ages absent from deaths as zero, not dropp
     female = c(1, 1), male = c(1, 1), total = c(2, 2)
   )
 
-  rates <- compute_death_rates(deaths, exposure)
+  # The fixture covers ages 0-2 only, so the coverage check (ages 0-100)
+  # must flag it; the structural-zero behaviour is what is tested here.
+  expect_warning(rates <- compute_death_rates(deaths, exposure), "incomplete_age_coverage")
 
   expect_equal(nrow(rates$mx_1x1), 3)
   age1 <- rates$mx_1x1[rates$mx_1x1$age == 1, ]
@@ -26,10 +28,11 @@ test_that("compute_death_rates treats ages absent from deaths as zero, not dropp
 
 test_that("compute_mx_5x1_one keeps age groups with no deaths at all", {
   exposure <- tibble::tibble(year = 2023, age = 0:9, female = 100, male = 100, total = 200)
-  # No deaths at all in ages 5-9: that whole age group has no row in deaths.
+  # No deaths at all in ages 5-9: that whole age group has no row in deaths
+  # (INE omits zero cells), so it is a structural zero.
   deaths <- tibble::tibble(year = 2023, age = 0:4, female = 1, male = 1, total = 2)
 
-  mx5 <- compute_mx_5x1_one(deaths, exposure)
+  mx5 <- compute_mx_5x1_one(compute_mx_1x1_one(deaths, exposure))
 
   expect_equal(nrow(mx5), 2)
   older <- mx5[mx5$age_group == "05-09", ]

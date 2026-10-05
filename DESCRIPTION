@@ -1,6 +1,6 @@
 Package: inedemogR
 Title: Tidy Access to Spanish INE Demographic Data
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person("J. R.", "Caro-Barrera", , "jrcaro@uco.es", role = c("aut", "cre", "cph"))
 Description: Provides tidy, harmonized access to demographic data from the

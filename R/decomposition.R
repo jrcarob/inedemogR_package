@@ -19,12 +19,14 @@ NULL
 # - Pollard (1988): an exact continuous-time decomposition,
 #   e2(0) - e1(0) = integral of (mu1(x) - mu2(x)) * l2(x)/l0_2 * e1(x) dx
 #   (equivalently, with the "1"/"2" life tables swapped - both forms are
-#   exact). This package uses the symmetric average of the two exact
-#   forms, discretized over single-year age intervals using mx as the
-#   piecewise-constant hazard (the same approximation build_life_table()
-#   already makes for qx). Reference: Pollard, J.H. (1988). "On the
-#   Decomposition of Changes in Expectation of Life and Differentials in
-#   Life Expectancy." Demography 25(2):265-276.
+#   exact). This package uses the symmetric average of the two forms. Each
+#   closed interval [x, x+1) is integrated with the midpoint rule: mx as the
+#   constant hazard, l(x + 1/2) * 1 approximated by Lx, and e(x + 1/2) by the
+#   mean of ex and e(x+1). The open interval is integrated exactly under its
+#   constant hazard: l(x+t) = lx exp(-mu t) and e(x+t) = 1/mu, which gives
+#   (mu1 - mu2) * e1(x) * e2(x) * l(x)/l0. Reference: Pollard, J.H. (1988).
+#   "On the Decomposition of Changes in Expectation of Life and Differentials
+#   in Life Expectancy." Demography 25(2):265-276.
 
 #' @noRd
 decompose_arriaga_one <- function(lt1, lt2) {
@@ -49,11 +51,16 @@ decompose_arriaga_one <- function(lt1, lt2) {
 
 #' @noRd
 decompose_pollard_one <- function(lt1, lt2) {
+  n <- nrow(lt1)
   l0_1 <- lt1$lx[1]
   l0_2 <- lt2$lx[1]
+  dm <- lt1$mx - lt2$mx
+  e_mid1 <- (lt1$ex + c(lt1$ex[-1], NA)) / 2
+  e_mid2 <- (lt2$ex + c(lt2$ex[-1], NA)) / 2
 
-  contribution <- 0.5 * (lt1$mx - lt2$mx) *
-    ((lt2$lx / l0_2) * lt1$ex + (lt1$lx / l0_1) * lt2$ex)
+  contribution <- 0.5 * dm * (lt2$Lx / l0_2 * e_mid1 + lt1$Lx / l0_1 * e_mid2)
+  contribution[n] <- dm[n] * lt1$ex[n] * lt2$ex[n] *
+    0.5 * (lt1$lx[n] / l0_1 + lt2$lx[n] / l0_2)
 
   tibble::tibble(age = lt1$age, contribution = contribution)
 }
@@ -64,14 +71,13 @@ decompose_pollard_one <- function(lt1, lt2) {
 #' two life tables to age-specific contributions, using either Arriaga's
 #' (1984) or Pollard's (1988) method. Arriaga's is an exact discrete
 #' decomposition: `sum(contribution)` recovers `e2(0) - e1(0)` exactly.
-#' Pollard's is exact only in the continuous limit; applied to a
-#' single-year life table, `sum(contribution)` is a close but not exact
-#' approximation of `e2(0) - e1(0)` - the approximation error grows with
-#' how steeply mortality changes with age (a few percent of the total
-#' gap under a fast-rising hazard is possible), so treat Arriaga's
-#' (the default) as the primary result and Pollard's as a cross-check,
-#' per Ponnapalli (2005)'s finding that the two methods' age patterns
-#' agree closely without being identical. Use this to answer "how much
+#' Pollard's is exact in continuous time; here each closed single-year
+#' interval is integrated with the midpoint rule and the open interval
+#' exactly under its constant hazard, so `sum(contribution)` differs from
+#' `e2(0) - e1(0)` by a small discretisation residual. The residual is
+#' returned as an attribute so it can be reported and checked against a
+#' tolerance; treat Arriaga's method (the default) as the primary result
+#' and Pollard's as a cross-check. Use this to answer "how much
 #' of the life-expectancy gap
 #' between province A and B (or between year Y1 and Y2) comes from
 #' mortality at each age?" - complementing [life_expectancy_summary()]/
@@ -89,7 +95,9 @@ decompose_pollard_one <- function(lt1, lt2) {
 #' @return A tibble with `age`, `contribution` (years of the `e2(0) -
 #'   e1(0)` gap attributable to mortality differences at that age;
 #'   positive means that age group contributed to a *gain* from `lt1` to
-#'   `lt2`).
+#'   `lt2`). Attributes `e0_difference` (the actual `e2(0) - e1(0)`) and
+#'   `residual` (`e0_difference - sum(contribution)`, zero up to rounding
+#'   for Arriaga).
 #' @examples
 #' age <- 0:100
 #' lt1 <- build_life_table(
@@ -112,5 +120,9 @@ decompose_life_expectancy <- function(lt1, lt2, method = c("arriaga", "pollard")
     stop("`lt1` and `lt2` must cover exactly the same set of ages.")
   }
 
-  if (method == "arriaga") decompose_arriaga_one(lt1, lt2) else decompose_pollard_one(lt1, lt2)
+  out <- if (method == "arriaga") decompose_arriaga_one(lt1, lt2) else decompose_pollard_one(lt1, lt2)
+  gap <- lt2$ex[1] - lt1$ex[1]
+  attr(out, "e0_difference") <- gap
+  attr(out, "residual") <- gap - sum(out$contribution)
+  out
 }

@@ -16,3 +16,15 @@ validate_deaths_age(df)
 Checks: no negative/missing counts; no duplicate province-age-year rows;
 continuous year coverage per province.
 }
+\examples{
+deaths_age_df <- tibble::tibble(
+  nuts3_code = c("ES611", "ES611"),
+  province_name = c("Almeria", "Almeria"),
+  year = c(2020, 2020),
+  age = c(0, 1),
+  female = c(2, 0),
+  male = c(3, 1),
+  total = female + male
+)
+validate_deaths_age(deaths_age_df)
+}

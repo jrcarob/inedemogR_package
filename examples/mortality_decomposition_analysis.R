@@ -23,7 +23,7 @@ lt <- build_life_tables(rates$mx_1x1)
 # 2. Cross-sectional comparison: two provinces, the latest year
 #    available - edit these two names for any other pair.
 sex <- "female"
-latest_year <- max(lt$fltper$year)
+latest_year <- 2024 # fixed so results do not change with new releases; max(lt$fltper$year) gives the newest year
 
 province_a <- "A Coruna"
 province_b <- "Madrid"
@@ -42,7 +42,7 @@ cat(
 )
 
 # 3. Temporal comparison: one province, first vs. latest year available.
-earliest_year <- min(lt$fltper$year)
+earliest_year <- 2006
 
 lt_early <- lt$fltper |> filter(province_name == province_a, year == earliest_year)
 lt_late <- lt$fltper |> filter(province_name == province_a, year == latest_year)

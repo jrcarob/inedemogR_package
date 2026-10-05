@@ -138,6 +138,9 @@ clean_deaths_provinces_age <- function(tidy_df) {
     dplyr::select("ine_code", "age", "sex", "year", "deaths") |>
     tidyr::pivot_wider(names_from = "sex", values_from = "deaths", values_fn = sum) |>
     dplyr::rename_with(stringr::str_to_lower, dplyr::any_of(c("Female", "Male", "Total")))
+  # A sex with no published cell at all in the request still needs a column,
+  # so its values can be recovered from Total or kept as missing.
+  for (s in setdiff(c("female", "male", "total"), names(wide))) wide[[s]] <- NA_real_
 
   # INE suppresses individual sex-specific counts for small-cell privacy but
   # still publishes the cell's Total; when exactly one of female/male is
@@ -161,6 +164,7 @@ clean_deaths_provinces_age <- function(tidy_df) {
       )
   }
 
+  wide$total <- dplyr::coalesce(wide$total, wide$female + wide$male)
   wide <- reconcile_total(wide, "province-age-year")
 
   wide |>
@@ -202,6 +206,16 @@ clean_deaths_national <- function(tidy_df) {
 #' @param prov_df Province-level cleaned deaths tibble.
 #' @param nat_df National-level cleaned deaths tibble (optional).
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' deaths_df <- tibble::tibble(
+#'   nuts3_code = c("ES611", "ES611", "ES612", "ES612"),
+#'   province_name = c("Almeria", "Almeria", "Cadiz", "Cadiz"),
+#'   year = c(2020, 2021, 2020, 2021),
+#'   female = c(480, 500, 610, 630),
+#'   male = c(510, 520, 640, 655),
+#'   total = female + male
+#' )
+#' validate_deaths(deaths_df)
 #' @export
 validate_deaths <- function(prov_df, nat_df = tibble::tibble()) {
   issues <- list()
@@ -263,6 +277,17 @@ validate_deaths <- function(prov_df, nat_df = tibble::tibble()) {
 #'
 #' @param df Age-specific province deaths tibble.
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' deaths_age_df <- tibble::tibble(
+#'   nuts3_code = c("ES611", "ES611"),
+#'   province_name = c("Almeria", "Almeria"),
+#'   year = c(2020, 2020),
+#'   age = c(0, 1),
+#'   female = c(2, 0),
+#'   male = c(3, 1),
+#'   total = female + male
+#' )
+#' validate_deaths_age(deaths_age_df)
 #' @export
 validate_deaths_age <- function(df) {
   issues <- list()
@@ -322,9 +347,13 @@ validate_deaths_age <- function(df) {
 #'   slowest. Set `FALSE` to always hit the network.
 #' @param force Logical (default `FALSE`). If `TRUE`, ignore any existing
 #'   cache and re-fetch from INE, refreshing the cache afterwards.
-#' @param cache_dir Directory for cached data. Default `NULL` means no
-#'   persistent caching (each call re-fetches from INE). Pass a directory,
-#'   e.g. `tools::R_user_dir("inedemogR", "cache")`, to enable caching.
+#' @param cache_dir Directory for cached data. The default `NULL` caches
+#'   in a per-session directory under `tempdir()`: repeated calls in the same
+#'   session reuse the first download, but nothing persists afterwards. Pass a
+#'   directory, e.g. `tools::R_user_dir("inedemogR", "cache")`, for a cache
+#'   that persists across sessions. A cache stores the parsed result as
+#'   `.rds`; refresh it with `force = TRUE`. Results carry a `provenance`
+#'   attribute (request, retrieval time in UTC, API, package version).
 #' @return `list(data_provinces, data_national, qc, qc_age)`:
 #'   `data_provinces` is age-specific (`ine_code`, `nuts3_code`,
 #'   `nuts2_code`, `province_name`, `year`, `age`, `female`, `male`,

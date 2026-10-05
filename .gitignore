@@ -1,0 +1,22 @@
+.Rproj.user
+.Rhistory
+.RData
+.httr-oauth
+.DS_Store
+.quarto
+
+# LaTeX build artifacts (regenerate with latexmk)
+docs/*.aux
+docs/*.log
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.synctex.gz
+docs/*.zip
+
+inst/doc
+/doc/
+/Meta/
+
+# Build and check output
+*.Rcheck/
+*.tar.gz

@@ -13,6 +13,19 @@ validate_death_rates(mx_df)
 \verb{list(passed = logical, issues = named list of flagged tibbles)}.
 }
 \description{
-Checks: no negative/NA/infinite rates; no rates >= 1 for ages below 90
-(flagged for review, not treated as a hard error).
+Fails on negative, missing, or infinite rates; on rates >= 1 below age
+90; and on any province-year without unique, complete single ages
+0-100.
+}
+\examples{
+deaths <- tibble::tibble(
+  nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
+  age = c(0, 1), female = c(1, 0), male = c(1, 1), total = c(2, 1)
+)
+exposure <- tibble::tibble(
+  nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
+  age = c(0, 1), female = c(500, 490), male = c(510, 505), total = c(1010, 995)
+)
+rates <- compute_death_rates(deaths, exposure)
+validate_death_rates(rates$mx_1x1)
 }

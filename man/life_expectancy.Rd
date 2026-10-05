@@ -8,10 +8,8 @@ life_expectancy(mx_df, province, sex = c("total", "female", "male"))
 }
 \arguments{
 \item{mx_df}{Output of the \code{mx_1x1} element of \code{\link[=compute_death_rates]{compute_death_rates()}}
-(columns \code{nuts3_code}, \code{province_name}, \code{year}, \code{age}, \code{mx_female},
-\code{mx_male}, \code{mx_total}). All three \verb{mx_*} columns must be present
-regardless of \code{sex}, since the underlying life-table construction
-builds all three sex tables together.}
+(rates \verb{mx_*}, deaths \verb{d_*}, and exposures \verb{e_*} for all three sexes,
+which \code{\link[=build_life_tables]{build_life_tables()}} needs for Kannisto smoothing).}
 
 \item{province}{Character, a province name (regular expressions
 allowed, matched against \code{province_name} — same convention as
@@ -36,17 +34,14 @@ requiring \code{\link[=build_life_tables]{build_life_tables()}} to be run for ev
 and \code{\link[=life_expectancy_summary]{life_expectancy_summary()}} applied afterwards.
 }
 \examples{
-# A Gompertz-like mx curve spanning to a realistic terminal age (100):
-# build_life_table()'s open-interval formula at the terminal age
-# (Lx = lx / mx) assumes that age is genuinely old (high mx), so a
-# short age range with a low terminal mx would produce a nonsensical
-# "remaining life expectancy" in the thousands of years.
 age <- 0:100
+e <- 1e5
+m <- 0.0003 * exp(0.07 * age)
 mx <- tibble::tibble(
   nuts3_code = "ES111", province_name = "A Coruna", year = 2023, age = age,
-  mx_female = 0.0003 * exp(0.07 * age),
-  mx_male = 0.00035 * exp(0.072 * age),
-  mx_total = 0.00033 * exp(0.071 * age)
+  mx_female = m, mx_male = 1.2 * m, mx_total = 1.1 * m,
+  d_female = m * e, d_male = 1.2 * m * e, d_total = 2.2 * m * e,
+  e_female = e, e_male = e, e_total = 2 * e
 )
 life_expectancy(mx, province = "A Coruna", sex = "female")
 }

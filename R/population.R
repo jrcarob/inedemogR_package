@@ -123,6 +123,17 @@ clean_population <- function(tidy_df) {
 #'
 #' @param df Output of the `data` element of [get_ine_population()].
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' population_df <- tibble::tibble(
+#'   nuts3_code = c("ES611", "ES611"),
+#'   province_name = c("Almeria", "Almeria"),
+#'   year = c(2020, 2020),
+#'   age = c(0, 1),
+#'   female = c(480, 490),
+#'   male = c(500, 505),
+#'   total = female + male
+#' )
+#' validate_population(population_df)
 #' @export
 validate_population <- function(df) {
   issues <- list()
@@ -202,9 +213,13 @@ validate_population <- function(df) {
 #'   package's slowest. Set `FALSE` to always hit the network.
 #' @param force Logical (default `FALSE`). If `TRUE`, ignore any existing
 #'   cache and re-fetch from INE, refreshing the cache afterwards.
-#' @param cache_dir Directory for cached data. Default `NULL` means no
-#'   persistent caching (each call re-fetches from INE). Pass a directory,
-#'   e.g. `tools::R_user_dir("inedemogR", "cache")`, to enable caching.
+#' @param cache_dir Directory for cached data. The default `NULL` caches
+#'   in a per-session directory under `tempdir()`: repeated calls in the same
+#'   session reuse the first download, but nothing persists afterwards. Pass a
+#'   directory, e.g. `tools::R_user_dir("inedemogR", "cache")`, for a cache
+#'   that persists across sessions. A cache stores the parsed result as
+#'   `.rds`; refresh it with `force = TRUE`. Results carry a `provenance`
+#'   attribute (request, retrieval time in UTC, API, package version).
 #' @return `list(data, qc)`: `data` is a tibble with columns `ine_code`,
 #'   `nuts3_code`, `nuts2_code`, `province_name`, `year`, `age`, `female`,
 #'   `male`, `total`; `qc` is the output of [validate_population()].

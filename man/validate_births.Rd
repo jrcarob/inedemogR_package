@@ -38,3 +38,14 @@ births reach 200: below that, even a large swing (e.g. 23 vs. 17
 births) is unremarkable binomial noise, not a data problem, and the
 z-test above already accounts for the small sample correctly.
 }
+\examples{
+births_df <- tibble::tibble(
+  nuts3_code = c("ES611", "ES611", "ES612", "ES612"),
+  province_name = c("Almeria", "Almeria", "Cadiz", "Cadiz"),
+  year = c(2020, 2021, 2020, 2021),
+  female = c(950, 970, 1200, 1210),
+  male = c(1000, 1020, 1260, 1270),
+  total = female + male
+)
+validate_births(births_df)
+}

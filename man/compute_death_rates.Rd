@@ -12,15 +12,35 @@ compute_death_rates(deaths, exposure)
 \item{exposure}{Output of the \code{data} element of \code{\link[=compute_exposure]{compute_exposure()}}.}
 }
 \value{
-\code{list(mx_1x1, mx_5x1, asdr, qc)}, each a tibble with \code{nuts3_code},
-\code{province_name} plus the rate columns; \code{qc} is the output of
-\code{\link[=validate_death_rates]{validate_death_rates()}} run on \code{mx_1x1}.
+\code{list(mx_1x1, mx_5x1, asdr, qc)}:
+\itemize{
+\item \code{mx_1x1}: \code{nuts3_code}, \code{province_name}, \code{year}, \code{age}, central death
+rates \code{mx_female}, \code{mx_male}, \code{mx_total}, and the deaths (\verb{d_*}) and
+exposures (\verb{e_*}) they come from (needed by \code{\link[=build_life_tables]{build_life_tables()}}).
+\item \code{mx_5x1}: the same by five-year group (\code{age_group}), pooled as
+sum(deaths) / sum(exposure).
+\item \code{asdr}: age-standardised death rates per 100,000 (European Standard
+Population 2013; the 95+ weight of 200 is spread evenly over ages
+95-99 and 100+). \code{NA} unless all ages 0-100 have finite rates.
+\item \code{qc}: output of \code{\link[=validate_death_rates]{validate_death_rates()}} on \code{mx_1x1}.
+}
 }
 \description{
 Computes 1x1 (single-year age/period), 5x1 (5-year age group), and
 age-standardised (ESP 2013) death rates for every province present in
 both \code{deaths} and \code{exposure}, per SHMD Protocol Section 12, Step 5.
 }
+\section{Missing data}{
+
+INE's age-specific deaths table omits cells with zero deaths, so an age
+missing from a province-year that is otherwise present is treated as a
+structural zero. An explicit \code{NA} count (unavailable or suppressed and not
+recoverable) is kept as \code{NA} and propagates to the rate, the grouped rate,
+and the ASDR, and makes \code{\link[=validate_death_rates]{validate_death_rates()}} fail. A province-year with
+exposure but no death records at all is unavailable, not zero: it is
+excluded with a warning.
+}
+
 \examples{
 deaths <- tibble::tibble(
   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,

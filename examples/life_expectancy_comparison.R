@@ -54,7 +54,7 @@ ggplot(le_compare, aes(x = year, y = e0, color = province_name)) +
 #    Spain is visible at a glance. map_life_expectancy() bridges
 #    life_expectancy_summary()'s province-level output onto
 #    get_ine_geo()'s geometry.
-latest_year <- max(le$year)
+latest_year <- 2024 # fixed so results do not change with new releases; max(le$year) gives the newest year
 
 map_life_expectancy(
   le, year = latest_year, sex = sex,

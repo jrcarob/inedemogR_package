@@ -1,3 +1,71 @@
+# inedemogR 0.2.0
+
+Corrections prompted by peer review (SoftwareX, SOFTX-D-26-01227). Several
+change numerical results; the effect on every number reported in the
+accompanying article is tabulated by `reproducibility/02_manuscript_numbers.R`.
+
+## Breaking changes and corrected results
+
+* `andreev_kingkade_a0()` now implements the sex-specific, three-segment
+  Andreev-Kingkade (2015) formulas of HMD Methods Protocol V6, Table 3. 0.1.0
+  used Coale-Demeny-style coefficients (e.g. female a0 at m0 = 0.004 was
+  0.064 instead of 0.141).
+* Life tables use `ax = 0.5` at every age except 0 (0.1.0 used `a1 = 0.4`);
+  combined-sex a0 is the death-weighted average of the sex-specific values
+  (HMD V6 Eq. 77).
+* `build_life_tables()` replaces the unweighted logit regression with the HMD
+  V6 Kannisto model fitted by Poisson maximum likelihood on deaths and
+  exposures at ages 80-99 (parameters constrained to be non-negative), with
+  the data-dependent replacement age Y (100-deaths rule, 80 <= Y <= 95) and
+  smoothed female-exposure weights for the combined-sex table. It now needs
+  the `d_*` and `e_*` columns that `compute_death_rates()` returns. New
+  arguments `kannisto_age` and `fit_min` support sensitivity analysis.
+* `compute_exposure()`: the Lexis correction is `(D_L - D_U) / 6` (HMD V6
+  Eq. 57) with conventional triangle labels; 0.1.0 used `(D_U - D_L) / 2`
+  with reversed labels. Only affects deaths supplied with a `cohort` column;
+  INE deaths use the even split, where the correction is zero.
+* European Standard Population 2013 weights sum to 100,000 (95+ = 200); 0.1.0
+  gave ages 95+ a weight of 600, inflating ASDRs by about 20 per cent.
+* Abridged life tables preserve `nmx = ndx / nLx` in every closed group
+  (Greville `nax` with the Chiang conversion, constant-hazard fallback);
+  0.1.0 combined an exponential `nqx` with a linear `nLx`.
+* `decompose_life_expectancy(method = "pollard")` integrates the open age
+  interval exactly and closed intervals by the midpoint rule; 0.1.0 treated
+  the open interval as a point and recovered only 22.5 per cent of a change
+  confined to it. Both methods return the attributes `e0_difference` and
+  `residual`.
+* Fertility follows INE's conventions: exposure is the mean of consecutive
+  January-1 female stocks; births outside 15-49 are folded into ages 15 and
+  49 instead of dropped; the mean age at childbearing uses mid-points
+  `x + 0.5`. `asfr` and `asfr_female` are now births **per woman** (TFR, GRR
+  and NRR are plain sums); `asfr_per_1000` is provided for display.
+
+## Missing data and validation
+
+* An explicit `NA` death count stays `NA` (0.1.0 turned it into a zero rate);
+  a province-year with no death records is excluded rather than treated as
+  zero mortality. Ages absent from INE's deaths table within a reported
+  province-year remain structural zeros.
+* `build_life_table()` rejects non-contiguous ages and non-finite rates.
+  `build_life_tables()` withholds province-years with missing exposure (e.g.
+  INE populations top-coded at 85+ before 2002) or too few ages to fit the
+  Kannisto model, and reports them in `$failed`; `$qc` is now a tibble.
+* `validate_life_table()` and `validate_abridged_life_table()` also fail on
+  missing ages, non-finite values, a broken `mx = dx / Lx` identity, and
+  (full tables) implausible e0; `validate_death_rates()` checks age coverage.
+  ASDR is `NA` unless all ages have finite rates.
+
+## Reproducibility
+
+* With `use_cache = TRUE` and `cache_dir = NULL`, retrieval now caches in a
+  per-session directory under `tempdir()` (0.1.0 silently did not cache).
+* Retrieved objects carry a `provenance` attribute (request, retrieval time,
+  API, package version).
+* New opt-in live integration test (`INEDEMOGR_LIVE_TESTS=true`) and weekly
+  workflow; `reproducibility/` holds frozen inputs, the validation study
+  against INE's provincial life tables and fertility indicators, and the
+  manuscript-number scripts.
+
 # inedemogR 0.1.0
 
 ## System A: quick multi-geography totals

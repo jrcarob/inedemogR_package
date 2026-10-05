@@ -13,7 +13,7 @@
 MAX_AGE <- 100L        # HMD convention: ages 0..99 single-year, "100" = 100+ open interval
 LIFE_TABLE_MAX <- 110L # HMD convention: life tables extend to 110+
 KANNISTO_FIT_MIN <- 80L
-KANNISTO_FIT_MAX <- 95L
+KANNISTO_Y_MAX <- 95L  # HMD V6: replacement age Y is capped at 95
 
 INE_API_BASE <- "https://servicios.ine.es/wstempus/js/ES"
 
@@ -223,9 +223,28 @@ fetch_ine_csv <- function(table_id) {
 #' `fetch_fun()` (and therefore the live INE request) entirely. Otherwise
 #' runs `fetch_fun()`, and if `use_cache = TRUE`, saves the result to
 #' cache before returning it.
+#'
+#' `cache_dir = NULL` caches in a per-session directory under `tempdir()`
+#' (CRAN policy: nothing is written to the home filespace unless the user
+#' supplies a directory), so repeated calls in one session are reused but the
+#' cache does not survive the session.
+#'
+#' Every freshly fetched result carries a `provenance` attribute: the request
+#' key (table identifier and period window), the retrieval time (UTC), the
+#' API base URL, and the package version. Cached results keep the provenance
+#' of their original retrieval.
 #' @noRd
 with_ine_cache <- function(cache_key, use_cache, force, cache_dir, fetch_fun) {
-  if (!use_cache || is.null(cache_dir)) return(fetch_fun())
+  fetch <- function() {
+    result <- fetch_fun()
+    attr(result, "provenance") <- list(
+      request = cache_key, retrieved_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
+      api = INE_API_BASE, package_version = as.character(utils::packageVersion("inedemogR"))
+    )
+    result
+  }
+  if (!use_cache) return(fetch())
+  cache_dir <- cache_dir %||% file.path(tempdir(), "inedemogR-cache")
 
   if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
   cache_file <- file.path(cache_dir, paste0(cache_key, ".rds"))
@@ -238,7 +257,7 @@ with_ine_cache <- function(cache_key, use_cache, force, cache_dir, fetch_fun) {
     return(readRDS(cache_file))
   }
 
-  result <- fetch_fun()
+  result <- fetch()
   saveRDS(result, cache_file)
   result
 }

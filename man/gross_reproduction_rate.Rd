@@ -10,22 +10,19 @@ gross_reproduction_rate(asfr_df)
 \item{asfr_df}{Output of \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}.}
 }
 \value{
-A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{grr}.
+A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{grr}
+(daughters per woman).
 }
 \description{
-Computes the gross reproduction rate (expected daughters per woman
-over her reproductive lifetime, ignoring mortality) per province and
-year, summing \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}'s \code{asfr_female} column -
-the actual female-newborn-specific rate INE's age-of-mother table
-provides, rather than the more common approximation of scaling
-\code{\link[=total_fertility_rate]{total_fertility_rate()}} by an assumed constant sex ratio at birth.
-See \code{\link[=net_reproduction_rate]{net_reproduction_rate()}} to additionally account for mortality
-before/during reproductive age.
+Sum of \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}'s \code{asfr_female} (female births per
+woman): expected daughters per woman, ignoring mortality. Uses INE's
+births by sex of the newborn directly rather than scaling the TFR by an
+assumed sex ratio at birth.
 }
 \examples{
 asfr <- tibble::tibble(
   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-  age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+  age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 )
 gross_reproduction_rate(asfr)
 }

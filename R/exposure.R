@@ -1,12 +1,15 @@
 #' @include helpers.R
 NULL
 
-# Exposure-to-risk computation for the SHMD pipeline, per SHMD Protocol
-# Section 12, Step 4 (HMD Methods Protocol V6):
+# Period exposure-to-risk, HMD Methods Protocol V6 Eq. (57), assuming births
+# are uniformly distributed within cohorts:
 #
-#   E(x,t) = 1/2*[P(x,t) + P(x,t+1)] + 1/2*[D_upper(x,t) - D_lower(x,t)]
+#   E(x,t) = 1/2*[P(x,t) + P(x,t+1)] + 1/6*[D_L(x,t) - D_U(x,t)]
 #
-# where D_upper/D_lower are deaths in the upper/lower Lexis triangle.
+# D_L: lower triangle, cohort born in t-x (reaches age x during year t).
+# D_U: upper triangle, cohort born in t-x-1 (already aged x on 1 January).
+# INE deaths carry no cohort, so they are split evenly between triangles and
+# the correction term vanishes: E(x,t) is the mean of the January-1 stocks.
 
 #' @noRd
 split_lexis_triangles <- function(deaths_df) {
@@ -17,8 +20,8 @@ split_lexis_triangles <- function(deaths_df) {
     deaths_df |>
       dplyr::mutate(
         triangle = dplyr::case_when(
-          .data$cohort == .data$year - .data$age ~ "upper",
-          .data$cohort == .data$year - .data$age - 1 ~ "lower",
+          .data$cohort == .data$year - .data$age ~ "lower",
+          .data$cohort == .data$year - .data$age - 1 ~ "upper",
           TRUE ~ NA_character_
         )
       ) |>
@@ -38,10 +41,9 @@ split_lexis_triangles <- function(deaths_df) {
       )
   } else {
     warning(
-      "No cohort column found in deaths data - falling back to an even ",
-      "50/50 Lexis split (HMD Methods Protocol V6 Appendix A approximation). ",
-      "Replace with true Lexis-triangle death counts for a fully compliant ",
-      "SHMD-E file if available."
+      "No cohort column in `deaths`: splitting deaths evenly between Lexis ",
+      "triangles, so exposure is the mean of the two January-1 populations ",
+      "(the HMD V6 Eq. 57 triangle correction is zero)."
     )
     deaths_df |>
       dplyr::mutate(
@@ -77,9 +79,9 @@ compute_exposure_one <- function(pop_df, deaths_df) {
       p1_total = ifelse(.data$is_boundary_year, .data$p_total, .data$p1_total),
       dplyr::across(dplyr::starts_with("d_upper"), ~ tidyr::replace_na(.x, 0)),
       dplyr::across(dplyr::starts_with("d_lower"), ~ tidyr::replace_na(.x, 0)),
-      female = 0.5 * (.data$p_female + .data$p1_female) + 0.5 * (.data$d_upper_female - .data$d_lower_female),
-      male = 0.5 * (.data$p_male + .data$p1_male) + 0.5 * (.data$d_upper_male - .data$d_lower_male),
-      total = 0.5 * (.data$p_total + .data$p1_total) + 0.5 * (.data$d_upper_total - .data$d_lower_total),
+      female = 0.5 * (.data$p_female + .data$p1_female) + (.data$d_lower_female - .data$d_upper_female) / 6,
+      male = 0.5 * (.data$p_male + .data$p1_male) + (.data$d_lower_male - .data$d_upper_male) / 6,
+      total = 0.5 * (.data$p_total + .data$p1_total) + (.data$d_lower_total - .data$d_upper_total) / 6,
       is_missing_source_pop = is.na(.data$female) | is.na(.data$male) | is.na(.data$total)
     ) |>
     dplyr::select(
@@ -97,6 +99,16 @@ compute_exposure_one <- function(pop_df, deaths_df) {
 #' @param exposure_df Output of the `data` element of [compute_exposure()].
 #' @param population_df The population tibble originally passed in.
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' exposure_df <- tibble::tibble(
+#'   nuts3_code = "ES611", year = 2020, age = c(0, 1),
+#'   female = c(495, 480), male = c(520, 500), total = c(1015, 980),
+#'   is_boundary_year = FALSE, is_missing_source_pop = FALSE
+#' )
+#' population_df <- tibble::tibble(
+#'   nuts3_code = "ES611", year = 2020, age = c(0, 1), total = c(1000, 970)
+#' )
+#' validate_exposure(exposure_df, population_df)
 #' @export
 validate_exposure <- function(exposure_df, population_df) {
   issues <- list()
@@ -140,12 +152,22 @@ validate_exposure <- function(exposure_df, population_df) {
 
 #' Compute exposure-to-risk for every province
 #'
-#' Computes E(x,t) = 1/2\[P(x,t) + P(x,t+1)\] + 1/2\[D_upper(x,t) -
-#' D_lower(x,t)\] for every province present in both `population` and
-#' `deaths`, per SHMD Protocol Section 12, Step 4. INE's Tempus3 death
-#' tables don't carry a birth-cohort split, so the Lexis triangle is
-#' derived via the documented 50/50 fallback (HMD Methods Protocol V6
-#' Appendix A) unless `deaths` already carries a `cohort` column.
+#' Computes E(x,t) = 1/2\[P(x,t) + P(x,t+1)\] + 1/6\[D_L(x,t) - D_U(x,t)\]
+#' (HMD Methods Protocol V6, Eq. 57) for every province present in both
+#' `population` and `deaths`, where `D_L` and `D_U` are deaths in the lower
+#' (cohort born in `t - x`) and upper (cohort born in `t - x - 1`) Lexis
+#' triangles.
+#'
+#' INE's death tables are not classified by birth cohort. Unless `deaths`
+#' carries a `cohort` column, deaths are split evenly between the two
+#' triangles, the correction term is zero, and exposure is the mean of the
+#' two January-1 populations. This is an adaptation of the HMD protocol,
+#' which splits 1x1 deaths by regression (Appendix A) and corrects for the
+#' monthly distribution of births (Appendix E); its effect is quantified in
+#' the package's validation study (see `reproducibility/`).
+#'
+#' If `P(x,t+1)` is unavailable for a year that is kept, exposure falls back
+#' to `P(x,t)` and the row is flagged with `is_boundary_year = TRUE`.
 #'
 #' Death registration lags population estimates by about a year, so
 #' `population` commonly includes a most-recent year (e.g. a Jan-1 stock

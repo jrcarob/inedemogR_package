@@ -7,18 +7,36 @@
 andreev_kingkade_a0(m0, sex = c("female", "male"))
 }
 \arguments{
-\item{m0}{Central death rate at age 0.}
+\item{m0}{Central death rate at age 0 (a single number).}
 
 \item{sex}{\code{"female"} or \code{"male"} (case-insensitive).}
 }
 \value{
-Numeric a0 value.
+Numeric a0 value, \code{NA} if \code{m0} is \code{NA}.
 }
 \description{
-Implements the Andreev-Kingkade (2015) piecewise regression specified in
-HMD Methods Protocol V6 (replacing the older Coale-Demeny approximation).
+Period (m0-based) formulas of Andreev and Kingkade (2015) as tabulated in
+HMD Methods Protocol V6, Table 3. Each interval is closed at its lower
+bound.
+}
+\details{
+\tabular{lll}{
+   Sex \tab m0 range \tab a0 \cr
+   Male \tab [0, 0.02300) \tab 0.14929 - 1.99545 m0 \cr
+   Male \tab [0.02300, 0.08307) \tab 0.02832 + 3.26021 m0 \cr
+   Male \tab [0.08307, Inf) \tab 0.29915 \cr
+   Female \tab [0, 0.01724) \tab 0.14903 - 2.05527 m0 \cr
+   Female \tab [0.01724, 0.06891) \tab 0.04667 + 3.88089 m0 \cr
+   Female \tab [0.06891, Inf) \tab 0.31411 \cr
+}
 }
 \examples{
 andreev_kingkade_a0(0.004, "female")
 andreev_kingkade_a0(0.15, "male")
+}
+\references{
+Andreev, E. M. and Kingkade, W. W. (2015). Average age at
+death in infancy and infant mortality level: Reconsidering the
+Coale-Demeny formulas at current levels of low mortality. \emph{Demographic
+Research} 33(13): 363-390. \doi{10.4054/DemRes.2015.33.13}
 }

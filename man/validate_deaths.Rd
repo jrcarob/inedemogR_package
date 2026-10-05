@@ -19,3 +19,14 @@ Checks: sex ratio at death in [0.90, 1.50]; no negative/missing
 counts; no duplicate province-year rows; continuous year coverage;
 provincial sum vs. national total (if \code{nat_df} supplied).
 }
+\examples{
+deaths_df <- tibble::tibble(
+  nuts3_code = c("ES611", "ES611", "ES612", "ES612"),
+  province_name = c("Almeria", "Almeria", "Cadiz", "Cadiz"),
+  year = c(2020, 2021, 2020, 2021),
+  female = c(480, 500, 610, 630),
+  male = c(510, 520, 640, 655),
+  total = female + male
+)
+validate_deaths(deaths_df)
+}

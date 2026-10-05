@@ -7,11 +7,19 @@
 validate_life_table(lt)
 }
 \arguments{
-\item{lt}{Output of \code{\link[=build_life_table]{build_life_table()}} for one year.}
+\item{lt}{Output of \code{\link[=build_life_table]{build_life_table()}} for one year and sex.}
 }
 \value{
-\verb{list(passed = logical, issues = named list of flagged tibbles)}.
+\verb{list(passed = logical, issues = named list)}.
 }
 \description{
-Checks: lx strictly non-increasing in age; Lx > 0; ex > 0; qx in [0, 1].
+Fails when any of the following holds: ages are not unique and contiguous
+from 0; any of \code{mx}, \code{qx}, \code{ax}, \code{lx}, \code{dx}, \code{Lx}, \code{Tx}, \code{ex} is missing or
+non-finite; \code{lx} increases with age; \code{Lx} or \code{ex} is not positive; \code{qx} lies
+outside [0, 1]; \code{mx = dx/Lx} does not hold; or life expectancy at birth is
+outside the plausibility band (15, 100] years.
+}
+\examples{
+mx <- data.frame(age = 0:100, mx = 0.0003 * exp(0.07 * (0:100)))
+validate_life_table(build_life_table(mx, "female"))
 }

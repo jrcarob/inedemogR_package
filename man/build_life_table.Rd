@@ -4,24 +4,30 @@
 \alias{build_life_table}
 \title{Build a period life table from a mortality schedule}
 \usage{
-build_life_table(mx_df, sex = c("female", "male"))
+build_life_table(mx_df, sex = c("female", "male"), a0 = NULL)
 }
 \arguments{
-\item{mx_df}{tibble with columns \code{age}, \code{mx} for one year and one sex
-(typically Kannisto-smoothed at older ages, see \code{\link[=build_life_tables]{build_life_tables()}}).}
+\item{mx_df}{Data frame with columns \code{age} and \code{mx} for one year and one
+sex. Ages must be unique, contiguous single years starting at 0; the last
+age is treated as the open interval. Rates must be finite and
+non-negative, and the open-interval rate positive.}
 
-\item{sex}{\code{"female"} or \code{"male"} — selects the Andreev-Kingkade a0 branch.}
+\item{sex}{\code{"female"} or \code{"male"}, selecting the Andreev-Kingkade branch.}
+
+\item{a0}{Optional override for a0 (used for combined-sex tables).}
 }
 \value{
-tibble: \code{age}, \code{mx}, \code{qx}, \code{ax}, \code{lx}, \code{dx}, \code{Lx}, \code{Tx}, \code{ex}.
+tibble: \code{age}, \code{mx}, \code{qx}, \code{ax}, \code{lx}, \code{dx}, \code{Lx}, \code{Tx}, \code{ex}
+(radix \code{l0 = 100000}).
 }
 \description{
-Constructs a full 1x1 period life table from a smoothed mx series
-spanning ages \code{0:110}, per HMD Methods Protocol V6: Andreev-Kingkade a0
-at age 0, a(1) = 0.4, a(x) = 0.5 elsewhere; the open age interval closes
-with \code{qx = 1} and \code{Lx = lx/mx}.
+Standard life-table recursion from a complete schedule of central death
+rates, per HMD Methods Protocol V6: Andreev-Kingkade a0 at age 0,
+\code{ax = 0.5} at every other closed age, and an open final interval with
+\code{qx = 1}, \code{ax = 1/mx}, \code{Lx = lx/mx}. No smoothing is applied; use
+\code{\link[=build_life_tables]{build_life_tables()}} for Kannisto old-age smoothing of observed data.
 }
 \examples{
-mx <- data.frame(age = 0:5, mx = c(0.004, 0.0003, 0.0002, 0.0002, 0.0002, 0.0002))
+mx <- data.frame(age = 0:100, mx = 0.0003 * exp(0.07 * (0:100)))
 build_life_table(mx, "female")
 }

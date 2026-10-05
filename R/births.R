@@ -107,6 +107,16 @@ clean_births <- function(tidy_df) {
 #'
 #' @param df Output of the `data` element of [get_ine_births()].
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' births_df <- tibble::tibble(
+#'   nuts3_code = c("ES611", "ES611", "ES612", "ES612"),
+#'   province_name = c("Almeria", "Almeria", "Cadiz", "Cadiz"),
+#'   year = c(2020, 2021, 2020, 2021),
+#'   female = c(950, 970, 1200, 1210),
+#'   male = c(1000, 1020, 1260, 1270),
+#'   total = female + male
+#' )
+#' validate_births(births_df)
 #' @export
 validate_births <- function(df) {
   issues <- list()
@@ -182,9 +192,13 @@ validate_births <- function(df) {
 #'   network.
 #' @param force Logical (default `FALSE`). If `TRUE`, ignore any existing
 #'   cache and re-fetch from INE, refreshing the cache afterwards.
-#' @param cache_dir Directory for cached data. Default `NULL` means no
-#'   persistent caching (each call re-fetches from INE). Pass a directory,
-#'   e.g. `tools::R_user_dir("inedemogR", "cache")`, to enable caching.
+#' @param cache_dir Directory for cached data. The default `NULL` caches
+#'   in a per-session directory under `tempdir()`: repeated calls in the same
+#'   session reuse the first download, but nothing persists afterwards. Pass a
+#'   directory, e.g. `tools::R_user_dir("inedemogR", "cache")`, for a cache
+#'   that persists across sessions. A cache stores the parsed result as
+#'   `.rds`; refresh it with `force = TRUE`. Results carry a `provenance`
+#'   attribute (request, retrieval time in UTC, API, package version).
 #' @return `list(data, qc)`: `data` is a tibble with columns `ine_code`,
 #'   `nuts3_code`, `nuts2_code`, `province_name`, `year`, `female`, `male`,
 #'   `total`; `qc` is the output of [validate_births()].
@@ -333,6 +347,20 @@ clean_births_by_age <- function(tidy_df) {
 #'
 #' @param df Output of the `data` element of [get_ine_births_by_age()].
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' # Only 3 of the 35 required single-year ages (15-49) are present here,
+#' # so this deliberately triggers the incomplete age coverage check.
+#' births_age_df <- tibble::tibble(
+#'   nuts3_code = "ES611",
+#'   province_name = "Almeria",
+#'   year = 2020,
+#'   age = c(20, 21, 22),
+#'   age_group = c("20", "21", "22"),
+#'   female = c(30, 28, 25),
+#'   male = c(32, 29, 27),
+#'   total = female + male
+#' )
+#' validate_births_by_age(births_age_df)
 #' @export
 validate_births_by_age <- function(df) {
   issues <- list()
@@ -386,9 +414,13 @@ validate_births_by_age <- function(df) {
 #'   than [get_ine_births()]'s; caching (see `use_cache`) matters more here.
 #' @param use_cache Logical (default `TRUE`). See [get_ine_births()].
 #' @param force Logical (default `FALSE`). See [get_ine_births()].
-#' @param cache_dir Directory for cached data. Default `NULL` means no
-#'   persistent caching (each call re-fetches from INE). Pass a directory,
-#'   e.g. `tools::R_user_dir("inedemogR", "cache")`, to enable caching.
+#' @param cache_dir Directory for cached data. The default `NULL` caches
+#'   in a per-session directory under `tempdir()`: repeated calls in the same
+#'   session reuse the first download, but nothing persists afterwards. Pass a
+#'   directory, e.g. `tools::R_user_dir("inedemogR", "cache")`, for a cache
+#'   that persists across sessions. A cache stores the parsed result as
+#'   `.rds`; refresh it with `force = TRUE`. Results carry a `provenance`
+#'   attribute (request, retrieval time in UTC, API, package version).
 #' @return `list(data, qc)`: `data` is a tibble with columns `ine_code`,
 #'   `nuts3_code`, `nuts2_code`, `province_name`, `year`, `age` (integer,
 #'   `NA` for the `under15` group), `age_group` (character: `"under15"`,

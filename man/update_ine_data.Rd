@@ -4,15 +4,15 @@
 \alias{update_ine_data}
 \title{Update INE Data}
 \usage{
-update_ine_data(
-  force = FALSE,
-  data_dir = tools::R_user_dir("inedemogR", "cache")
-)
+update_ine_data(force = FALSE, data_dir)
 }
 \arguments{
 \item{force}{Logical, force update even if data is current.}
 
-\item{data_dir}{Character, directory for cached data.}
+\item{data_dir}{Character, directory for cached data. No default: this
+function only writes when a directory is explicitly supplied, per CRAN
+policy against writing to the user's home filespace by default. Pass
+e.g. \code{tools::R_user_dir("inedemogR", "cache")} for a persistent cache.}
 }
 \value{
 Invisibly, a named list of the latest cached year per indicator.
@@ -25,7 +25,7 @@ and caches it for offline use.
 \examples{
 \dontrun{
 # Not run: requires live network access to the INE API, and writes to
-# the user's cache directory.
-update_ine_data()
+# the supplied cache directory.
+update_ine_data(data_dir = tools::R_user_dir("inedemogR", "cache"))
 }
 }

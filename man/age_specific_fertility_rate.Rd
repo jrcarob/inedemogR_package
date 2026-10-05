@@ -12,33 +12,41 @@ age_specific_fertility_rate(
 )
 }
 \arguments{
-\item{births_age_df}{Tibble as returned by \code{get_ine_births_by_age() $data} (columns \code{nuts3_code}, \code{province_name}, \code{year}, \code{age},
-\code{female}, \code{total}).}
+\item{births_age_df}{Tibble as returned by \code{get_ine_births_by_age()$data}
+(columns \code{nuts3_code}, \code{province_name}, \code{year}, \code{age}, \code{female}, \code{total},
+and optionally \code{age_group}).}
 
-\item{pop_df}{Population tibble as returned by \code{get_ine_population() $data} (columns \code{nuts3_code}, \code{year}, \code{age}, \code{female}).}
+\item{pop_df}{Population tibble as returned by \code{get_ine_population()$data}
+(columns \code{nuts3_code}, \code{year}, \code{age}, \code{female}), January-1 stocks.}
 
-\item{age_min}{Integer, the youngest single-year age included
-(default \code{15}).}
-
-\item{age_max}{Integer, the oldest single-year age included
-(default \code{49}).}
+\item{age_min, age_max}{Integer bounds of the reproductive age span
+(default 15-49).}
 }
 \value{
 A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{age},
-\code{asfr} (all births per 1,000 women of that age), \code{asfr_female}
-(births of female newborns per 1,000 women of that age - the input
-\code{\link[=gross_reproduction_rate]{gross_reproduction_rate()}} and \code{\link[=net_reproduction_rate]{net_reproduction_rate()}} need).
+\code{births}, \code{women} (mean annual female population), \code{asfr} (births per
+woman), \code{asfr_female} (female births per woman, for
+\code{\link[=gross_reproduction_rate]{gross_reproduction_rate()}} and \code{\link[=net_reproduction_rate]{net_reproduction_rate()}}),
+\code{asfr_per_1000} (\code{1000 * asfr}, for display), and \code{is_boundary_year}.
 }
 \description{
-Computes age-specific fertility rates (births per 1,000 women of that
-age) per province, year, and single year of age, joining
-\code{\link[=get_ine_births_by_age]{get_ine_births_by_age()}} and \code{\link[=get_ine_population]{get_ine_population()}} output. This is
-the schedule underlying \code{\link[=total_fertility_rate]{total_fertility_rate()}},
-\code{\link[=mean_age_at_childbearing]{mean_age_at_childbearing()}}, \code{\link[=gross_reproduction_rate]{gross_reproduction_rate()}}, and
-\code{\link[=net_reproduction_rate]{net_reproduction_rate()}} - unlike \code{\link[=general_fertility_rate]{general_fertility_rate()}}, which
-collapses reproductive age into one aggregate rate,
-\code{age_specific_fertility_rate()} keeps the full age schedule, the input
-a true total fertility rate requires.
+Computes age-specific fertility rates per province, year, and single year
+of mother's age, following INE's methodology for its Indicadores
+Demograficos Basicos (INE, \emph{Indicadores Demograficos Basicos: Metodologia},
+pp. 4 and 9-10):
+}
+\details{
+\itemize{
+\item \strong{Exposure} is the mean annual female population, the average of the
+January-1 stocks of years \code{t} and \code{t + 1}. If the \code{t + 1} stock is not in
+\code{pop_df}, the \code{t} stock is used and the row is flagged with
+\code{is_boundary_year = TRUE} (with a warning).
+\item \strong{Out-of-range births} are folded into the boundary ages: births to
+mothers younger than \code{age_min} (including INE's "under 15" group, coded
+\code{age = NA}, \code{age_group = "under15"}) are added to age \code{age_min}, and births
+to mothers older than \code{age_max} (INE's "50 and over") to age \code{age_max}.
+No births are dropped.
+}
 }
 \examples{
 births_age <- tibble::tibble(
@@ -46,7 +54,8 @@ births_age <- tibble::tibble(
   age = c(20, 30), female = c(10, 25), total = c(20, 50)
 )
 pop <- tibble::tibble(
-  nuts3_code = "ES111", year = 2023, age = c(20, 30), female = c(2000, 2500)
+  nuts3_code = "ES111", year = rep(2023:2024, each = 2), age = c(20, 30, 20, 30),
+  female = c(2000, 2500, 2100, 2400)
 )
 age_specific_fertility_rate(births_age, pop)
 }

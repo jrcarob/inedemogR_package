@@ -36,7 +36,7 @@ lt_abridged <- build_abridged_life_tables(rates$mx_1x1, rates$mx_5x1)
 #    underlying mx data, just grouped differently).
 province <- "A Coruna"
 sex <- "female"
-latest_year <- max(lt_abridged$fltper$year)
+latest_year <- 2024 # fixed so results do not change with new releases; max(lt_abridged$fltper$year) gives the newest year
 
 e0_1x1 <- lt_1x1$fltper |>
   filter(province_name == province, year == latest_year, age == 0) |>

@@ -23,10 +23,21 @@ tibble: \code{age_group}, \code{age_start}, \code{n} (interval width, \code{NA}
 for the open interval), \code{mx}, \code{ax}, \code{qx}, \code{lx}, \code{dx}, \code{Lx}, \code{Tx}, \code{ex}.
 }
 \description{
-Constructs a full abridged period life table (age groups \code{"00-04"},
-\code{"05-09"}, ..., \code{"95-99"}, \code{"100+"}) directly from grouped central
-death rates, per the standard discrete abridged life-table method
-(Chiang's \code{nqx} formula; Preston, Heuveline & Guillot 2001, Ch. 3).
+Constructs an abridged period life table (age groups \code{"00-04"},
+\code{"05-09"}, ..., \code{"95-99"}, \code{"100+"}) independently from observed grouped
+central death rates. It is a separate estimate, not an abridgement of the
+single-year table from \code{\link[=build_life_tables]{build_life_tables()}}: it uses no Kannisto
+smoothing, and its open interval is 100+ rather than 110+, so the two
+tables' life expectancies differ slightly by construction.
+}
+\details{
+Closed groups from age 5 use Greville's \code{nax} with the Chiang
+conversion \verb{nqx = n nmx / (1 + (n - nax) nmx)} and
+\verb{nLx = n l(x+n) + nax ndx} (Preston, Heuveline & Guillot 2001, Box 3.1),
+falling back to a constant hazard (\verb{nqx = 1 - exp(-n nmx)},
+\code{nLx = ndx / nmx}) where Greville's slope term is undefined. Both keep
+\code{nmx = ndx / nLx} exactly. The open interval has \code{qx = 1},
+\code{Lx = lx / mx}.
 Complements \code{\link[=build_life_table]{build_life_table()}}'s single-year (1x1) tables - use
 this when comparing against other agencies' published abridged
 tables, or when only grouped-age data is available. The youngest

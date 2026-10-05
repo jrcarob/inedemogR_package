@@ -17,3 +17,15 @@ Checks: no negative/missing counts; full age range (0..100) present per
 province-year; no duplicate province-age-year rows; continuous year
 coverage; no implausible age-to-age jumps (>50\%, informational only).
 }
+\examples{
+population_df <- tibble::tibble(
+  nuts3_code = c("ES611", "ES611"),
+  province_name = c("Almeria", "Almeria"),
+  year = c(2020, 2020),
+  age = c(0, 1),
+  female = c(480, 490),
+  male = c(500, 505),
+  total = female + male
+)
+validate_population(population_df)
+}

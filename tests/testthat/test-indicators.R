@@ -182,12 +182,15 @@ make_lifetable_mx_fixture <- function() {
   # (matching real usage's actual terminal age) so the terminal mx is
   # realistically high.
   age <- 0:100
+  e <- 1e5
   mx_female <- 0.0003 * exp(0.07 * age)
   mx_male <- 0.00035 * exp(0.072 * age)
   tibble::tibble(
     nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
     age = age, mx_female = mx_female, mx_male = mx_male,
-    mx_total = (mx_female + mx_male) / 2
+    mx_total = (mx_female + mx_male) / 2,
+    d_female = mx_female * e, d_male = mx_male * e, d_total = (mx_female + mx_male) * e,
+    e_female = e, e_male = e, e_total = 2 * e
   )
 }
 
@@ -239,18 +242,23 @@ make_pop_reproductive_fixture <- function() {
   )
 }
 
-test_that("age_specific_fertility_rate joins on nuts3_code/year/age and excludes out-of-range ages", {
+test_that("age_specific_fertility_rate joins on nuts3_code/year/age and folds out-of-range ages", {
   births_age <- make_births_age_fixture()
-  pop <- make_pop_reproductive_fixture()
+  pop <- dplyr::bind_rows(
+    tibble::tibble(nuts3_code = "ES111", year = 2023, age = c(15, 20, 30, 49), female = c(900, 1000, 1500, 800)),
+    tibble::tibble(nuts3_code = "ES111", year = 2024, age = c(15, 20, 30, 49), female = c(900, 1000, 1500, 800))
+  )
 
   result <- age_specific_fertility_rate(births_age, pop)
 
-  # age 14 (below age_min) and age 50 (above age_max) must be dropped
-  expect_equal(sort(result$age), c(20, 30))
-  expect_equal(result$asfr[result$age == 20], 20 / 1000 * 1000)
-  expect_equal(result$asfr_female[result$age == 20], 10 / 1000 * 1000)
-  expect_equal(result$asfr[result$age == 30], 30 / 1500 * 1000)
-  expect_equal(result$asfr_female[result$age == 30], 15 / 1500 * 1000)
+  # age 14 folds into 15 and age 50 into 49 (INE convention); ASFR per woman
+  expect_equal(sort(result$age), c(15, 20, 30, 49))
+  expect_equal(result$asfr[result$age == 15], 2 / 900)
+  expect_equal(result$asfr[result$age == 20], 20 / 1000)
+  expect_equal(result$asfr_female[result$age == 20], 10 / 1000)
+  expect_equal(result$asfr[result$age == 30], 30 / 1500)
+  expect_equal(result$asfr_per_1000[result$age == 30], 30 / 1500 * 1000)
+  expect_equal(result$asfr[result$age == 49], 2 / 800)
 })
 
 test_that("age_specific_fertility_rate respects custom age_min/age_max boundaries", {
@@ -260,7 +268,7 @@ test_that("age_specific_fertility_rate respects custom age_min/age_max boundarie
     female = c(500, 1000, 1500, 400)
   )
 
-  result <- age_specific_fertility_rate(births_age, pop, age_min = 14L, age_max = 50L)
+  result <- suppressWarnings(age_specific_fertility_rate(births_age, pop, age_min = 14L, age_max = 50L))
 
   expect_equal(sort(result$age), c(14, 20, 30, 50))
 })
@@ -268,27 +276,27 @@ test_that("age_specific_fertility_rate respects custom age_min/age_max boundarie
 make_asfr_fixture <- function() {
   tibble::tibble(
     nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-    age = c(20, 30), asfr = c(20, 30), asfr_female = c(10, 15)
+    age = c(20, 30), asfr = c(0.020, 0.030), asfr_female = c(0.010, 0.015)
   )
 }
 
-test_that("total_fertility_rate sums asfr over ages and divides by 1000", {
+test_that("total_fertility_rate sums asfr (per woman) over ages", {
   result <- total_fertility_rate(make_asfr_fixture())
 
-  expect_equal(result$tfr, (20 + 30) / 1000)
+  expect_equal(result$tfr, 0.020 + 0.030)
 })
 
-test_that("mean_age_at_childbearing computes the asfr-weighted mean age", {
+test_that("mean_age_at_childbearing computes the asfr-weighted mean of age + 0.5", {
   asfr <- make_asfr_fixture()
   result <- mean_age_at_childbearing(asfr)
 
-  expect_equal(result$mac, (20 * 20 + 30 * 30) / (20 + 30))
+  expect_equal(result$mac, (20.5 * 0.020 + 30.5 * 0.030) / (0.020 + 0.030))
 })
 
-test_that("gross_reproduction_rate sums asfr_female over ages and divides by 1000", {
+test_that("gross_reproduction_rate sums asfr_female (per woman) over ages", {
   result <- gross_reproduction_rate(make_asfr_fixture())
 
-  expect_equal(result$grr, (10 + 15) / 1000)
+  expect_equal(result$grr, 0.010 + 0.015)
 })
 
 test_that("net_reproduction_rate weights asfr_female by female Lx/radix", {
@@ -299,7 +307,7 @@ test_that("net_reproduction_rate weights asfr_female by female Lx/radix", {
 
   result <- net_reproduction_rate(asfr, fltper)
 
-  expected <- (10 / 1000 * 99000 / 100000) + (15 / 1000 * 98000 / 100000)
+  expected <- (0.010 * 99000 / 100000) + (0.015 * 98000 / 100000)
   expect_equal(result$nrr, expected)
 })
 

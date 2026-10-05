@@ -10,21 +10,18 @@ total_fertility_rate(asfr_df)
 \item{asfr_df}{Output of \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}.}
 }
 \value{
-A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{tfr}.
+A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{tfr}
+(children per woman).
 }
 \description{
-Computes the total fertility rate (expected live births per woman
-over her reproductive lifetime, under a given year's fertility
-schedule) per province and year, by summing \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}
-over single years of age. This is the true TFR that
-\code{\link[=crude_birth_rate]{crude_birth_rate()}}'s and \code{\link[=general_fertility_rate]{general_fertility_rate()}}'s documentation
-both note the package previously could not compute, since it requires
-the age-of-mother breakdown \code{\link[=get_ine_births_by_age]{get_ine_births_by_age()}} retrieves.
+Sum of \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}'s \code{asfr} (births per woman) over
+single years of age: the expected number of children per woman under the
+year's age schedule.
 }
 \examples{
 asfr <- tibble::tibble(
   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-  age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+  age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 )
 total_fertility_rate(asfr)
 }

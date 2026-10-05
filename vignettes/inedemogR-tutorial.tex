@@ -395,25 +395,26 @@ stage's output directly.
 \subsubsection{Exposure-to-risk: \fn{compute\_exposure()}}
 
 Exposure-to-risk $E(x,t)$ approximates the person-years lived at age $x$
-during calendar year $t$, combining the population stock at the start and
-end of the year with a Lexis-triangle correction for within-year deaths:
+during calendar year $t$. HMD Methods Protocol V6 (Eq.~57, uniform
+distribution of births within cohorts) gives
 
 \begin{equation}
 E(x,t) \;=\; \tfrac{1}{2}\bigl[P(x,t) + P(x,t+1)\bigr]
-\;+\; \tfrac{1}{2}\bigl[D^{U}(x,t) - D^{L}(x,t)\bigr]
+\;+\; \tfrac{1}{6}\bigl[D^{L}(x,t) - D^{U}(x,t)\bigr]
 \end{equation}
 
-where $P(x,t)$ is the January~1 population aged $x$ in year $t$, and
-$D^{U}(x,t)$, $D^{L}(x,t)$ are deaths in the upper and lower Lexis triangles
-of the $(x,t)$ parallelogram --- i.e.\ deaths to the birth cohort $t-x$
-(upper triangle, born before the start of year $t$, dying at age $x$) versus
-deaths to the birth cohort $t-x-1$ (lower triangle, born during year $t$
-itself among those who reach age $x$). INE's Tempus3 death tables do not
-carry a birth-cohort split, so absent a \fn{cohort} column,
-\fn{compute\_exposure()} falls back to the documented HMD Methods Protocol
-V6 Appendix A approximation of an even 50/50 split
-($D^{U}=D^{L}=D(x,t)/2$, which cancels the correction term entirely,
-i.e.\ reduces to a plain average of the two population stocks).
+where $P(x,t)$ is the January~1 population aged $x$ in year $t$;
+$D^{L}(x,t)$ counts deaths in the lower Lexis triangle (the cohort born in
+$t-x$, which reaches age $x$ during year $t$) and $D^{U}(x,t)$ deaths in the
+upper triangle (the cohort born in $t-x-1$, already aged $x$ on 1~January).
+If \fn{deaths} carries a \fn{cohort} column the triangles are taken from it.
+INE's death tables are not classified by cohort, so by default deaths are
+split evenly between the triangles, the correction vanishes, and exposure is
+the mean of the two January-1 stocks. This is an \emph{adaptation} of the
+protocol, which splits square-cell deaths by regression (Appendix~A) and
+corrects for the monthly distribution of births (Appendix~E); the
+sensitivity of $e_0$ and $e_{65}$ to the split is reported in the package's
+validation study (\texttt{reproducibility/}).
 
 \begin{lstlisting}
 compute_exposure(population, deaths)
@@ -427,10 +428,9 @@ compute_exposure(population, deaths)
 Because death registration lags population estimates by roughly a year, the
 most recent year in \fn{population} commonly has no matching rows in
 \fn{deaths} yet. That year is still used as the $P(x,t+1)$ boundary needed
-to compute the \emph{previous} year's exposure, but is not itself returned
-as an exposure row --- treating an entirely-absent year as zero deaths would
-mechanically produce zero mortality and, downstream, a nonsensical inflated
-life expectancy.
+to compute the \emph{previous} year's exposure, but is not itself returned.
+If $P(x,t+1)$ is missing for a year that is kept, exposure falls back to
+$P(x,t)$ and the row is flagged \fn{is\_boundary\_year}.
 
 \begin{lstlisting}
 pop <- get_ine_population()
@@ -439,10 +439,9 @@ exposure <- compute_exposure(pop$data, deaths$data_provinces)
 exposure$qc$passed
 \end{lstlisting}
 
-\fn{validate\_exposure()} flags cells with no usable source population
-(informational), any remaining negative/NA exposure, and implausible
-exposure exceeding twice the source population (a generous plausibility
-bound).
+\fn{validate\_exposure()} flags cells with no usable source population,
+any remaining negative or missing exposure, and exposure exceeding twice the
+source population.
 
 \subsubsection{Central death rates: \fn{compute\_death\_rates()}}
 \label{sec:death-rates}
@@ -454,175 +453,185 @@ single-year age $x$ in year $t$ is
 m(x,t) \;=\; \frac{D(x,t)}{E(x,t)} \qquad \text{(1x1: single-year age, one-year period)}
 \end{equation}
 
-INE's age-specific deaths table only publishes rows for age$\times$year
-cells with at least one death; \fn{compute\_death\_rates()} starts from the
-complete $0$--\fn{MAX\_AGE} exposure grid and left-joins deaths, filling
-absent rows with zero deaths rather than silently dropping them --- a
-missing INE row means \emph{zero} deaths at that age, not a data gap, and
-dropping it would break the age-contiguity that the life-table recursion
-(Section~\ref{sec:lifetables}) requires.
+\paragraph{Missing data.} Three situations are kept apart:
+\begin{itemize}
+  \item \emph{Structural zeros.} INE's age-specific deaths table omits cells
+  with no deaths, so an age missing from a province-year that is otherwise
+  present is a true zero.
+  \item \emph{Unavailable or suppressed counts.} An explicit \fn{NA} death
+  count (INE suppresses some small sex-specific cells; those recoverable as
+  Total minus the other sex are recovered at retrieval) stays \fn{NA} and
+  propagates to the rate, the grouped rate, and the ASDR, and makes
+  \fn{validate\_death\_rates()} fail.
+  \item \emph{Missing province-years.} A province-year with exposure but no
+  death records at all is excluded with a warning; it is never treated as
+  zero mortality.
+\end{itemize}
 
-A pooled 5-year-age-group ($n=5$) rate is also computed:
+A pooled 5-year-age-group ($n=5$) rate is also computed from the same counts:
 
 \begin{equation}
 m(x,n,t) \;=\; \frac{\sum_{k=0}^{4} D(x+k,t)}{\sum_{k=0}^{4} E(x+k,t)}
 \qquad \text{(5x1)}
 \end{equation}
 
-and an age-standardized death rate using the Eurostat European Standard
-Population 2013 (ESP2013) single-year age weights $w(x)$, with
-$\sum_x w(x) = 100{,}000$:
+and an age-standardised death rate per 100{,}000 using the European Standard
+Population 2013 (ESP2013):
 
 \begin{equation}
-\mathrm{ASDR}(t) \;=\; \sum_{x} m(x,t)\, w(x)
+\mathrm{ASDR}(t) \;=\; \sum_{x=0}^{100+} m(x,t)\, w(x), \qquad \sum_x w(x) = 100{,}000.
 \end{equation}
 
-expressed in deaths per 100,000 of the ESP2013 standard population,
-allowing direct comparison of mortality levels across provinces or years
-with different underlying age structures.
+ESP2013 gives weights to five-year groups up to an open group 95+ (weight
+200). Each group's weight is spread evenly over its single ages; the 95+
+weight is spread over the six cells $95,\dots,99,100+$. The ASDR is \fn{NA}
+unless every age has a finite rate.
 
 \begin{lstlisting}
 compute_death_rates(deaths, exposure)
 \end{lstlisting}
 
-Returns \fn{list(mx\_1x1, mx\_5x1, asdr, qc)}. \fn{validate\_death\_rates()}
-flags negative/NA/infinite rates and any rate $\geq 1$ below age 90
-(implausible for a working-age population, informational).
+Returns \fn{list(mx\_1x1, mx\_5x1, asdr, qc)}; \fn{mx\_1x1} and
+\fn{mx\_5x1} carry the deaths (\fn{d\_*}) and exposures (\fn{e\_*}) beside
+the rates, as the old-age model below needs them.
+\fn{validate\_death\_rates()} fails on negative, missing or infinite rates,
+on rates $\geq 1$ below age 90, and on incomplete age coverage.
 
 \begin{lstlisting}
 rates <- compute_death_rates(deaths$data_provinces, exposure$data)
 rates$mx_1x1   # age x year x province mortality schedule
-rates$asdr     # age-standardized rate, one row per province-year
+rates$asdr     # age-standardised rate per 100,000, one row per province-year
 \end{lstlisting}
 
 \subsubsection{Period life tables: \fn{build\_life\_tables()}}
 \label{sec:lifetables}
 
-\fn{build\_life\_tables()} constructs standard 1x1 period life tables for
-every province and year in \fn{mx\_1x1}, following HMD Methods Protocol V6
-exactly. The construction proceeds in two stages: old-age smoothing, then
-the life-table recursion itself.
+\fn{build\_life\_tables()} constructs single-year period life tables
+(ages 0 to 110+) for every province and year in \fn{mx\_1x1}, following
+HMD Methods Protocol V6, Section~7.1.
 
-\paragraph{Kannisto smoothing of old-age mortality.} Single-year mortality
-rates at the oldest ages are noisy (small populations, few deaths), so ages
-80--110 are replaced with a smooth Kannisto model fitted on ages 80--95 and
-extrapolated to age 110:
-
-\begin{equation}
-\operatorname{logit} m(x) = \log\!\frac{m(x)}{1-m(x)} = \alpha + \beta x,
-\qquad x \in [80, 95]
-\end{equation}
-
-fitted by ordinary least squares, then evaluated for every age up to the
-open-ended terminal age (110):
+\paragraph{Kannisto smoothing of old-age mortality.} Observed rates are
+replaced from the age $Y$ upward, where $Y$ is the lowest age from 80 with
+at most 100 female or 100 male deaths, constrained to $80 \le Y \le 95$
+(the same $Y$ for both sexes). The fitted hazard is the Kannisto logistic
+model with asymptote one,
 
 \begin{equation}
-m^{\text{Kannisto}}(x) = \frac{e^{\alpha + \beta x}}{1 + e^{\alpha + \beta x}}
+\mu_x(a,b) = \frac{a\,e^{b(x-80)}}{1 + a\,e^{b(x-80)}}, \qquad a, b \ge 0,
 \end{equation}
 
-\paragraph{Andreev--Kingkade $a_0$.} The average person-years lived by
-those who die before age 1, $a_0$, uses the Andreev--Kingkade (2015)
-piecewise regression on the age-0 central death rate $m_0$ (replacing the
-older Coale--Demeny approximation), separately by sex:
+estimated by Poisson maximum likelihood, $D_x \sim \mathrm{Poisson}(E_x\,
+\mu_{x+1/2})$, maximising
+$\sum_x \bigl[D_x \log \mu_{x+1/2} - E_x\, \mu_{x+1/2}\bigr]$ over ages
+80--99 (L-BFGS-B, analytic gradient, grid-search start). HMD fits ages
+80--110+; INE's single-year detail ends at an open 100+ group, so the
+package fits 80--99. The constraint $b \ge 0$ means smoothed rates cannot
+fall with age. The smoothed rate at age $x$ is $\hat\mu_{x+1/2}$.
+For the combined-sex table, rates from $Y$ are the sex-specific smoothed
+rates weighted by a smoothed female share of exposure (weighted least
+squares of $\mathrm{logit}\,\pi^F_x$ on a quadratic in age, HMD Eqs.~69--73).
+
+\paragraph{Andreev--Kingkade $a_0$.} The mean time lived in the first year
+by those who die before age 1 uses the period formulas of Andreev and
+Kingkade (2015) as tabulated in HMD Methods Protocol V6, Table~3:
 
 \begin{equation}
 a_0 =
 \begin{cases}
-0.330 & \text{if } m_0 \geq 0.107 \\
-0.053 + 2.800\,m_0 & \text{if female and } m_0 < 0.107 \\
-0.045 + 2.684\,m_0 & \text{if male and } m_0 < 0.107
+0.14929 - 1.99545\,m_0 & \text{male}, \ m_0 < 0.02300 \\
+0.02832 + 3.26021\,m_0 & \text{male}, \ 0.02300 \le m_0 < 0.08307 \\
+0.29915 & \text{male}, \ m_0 \ge 0.08307 \\
+0.14903 - 2.05527\,m_0 & \text{female}, \ m_0 < 0.01724 \\
+0.04667 + 3.88089\,m_0 & \text{female}, \ 0.01724 \le m_0 < 0.06891 \\
+0.31411 & \text{female}, \ m_0 \ge 0.06891
 \end{cases}
 \end{equation}
 
-For the combined-sex table, $a_0$ is the mean of the female and male
-values. The remaining $a_x$ values follow the standard HMD convention:
-$a_1 = 0.4$ (age 1), $a_x = 0.5$ for ages $2$ and above.
+For the combined-sex table, $a_0$ is the average of the female and male
+values weighted by their age-0 deaths (HMD Eq.~77). Every other closed age
+has $a_x = 0.5$.
 
-\paragraph{Life-table recursion.} Given $m_x$ and $a_x$ for every age $x =
-0, 1, \dots, \omega$ (open interval at $\omega = 110$):
+\paragraph{Life-table recursion.} Given $m_x$ and $a_x$ for $x = 0, 1,
+\dots, \omega$ (open interval at $\omega = 110$):
 
 \begin{align}
 q_x &= \frac{m_x}{1 + (1-a_x)m_x}, \qquad q_\omega = 1 \\
-l_0 &= 100{,}000 \\
-d_x &= l_x\, q_x \\
-l_{x+1} &= l_x - d_x \\
+l_0 &= 100{,}000, \qquad d_x = l_x\, q_x, \qquad l_{x+1} = l_x - d_x \\
 L_x &=
 \begin{cases}
-l_{x+1} + a_x d_x & x < \omega \\
+l_x - (1-a_x)\, d_x & x < \omega \\
 l_\omega / m_\omega & x = \omega
 \end{cases}\\
-T_x &= \sum_{y \geq x} L_y \\
-e_x &= T_x / l_x
+T_x &= \sum_{y \geq x} L_y, \qquad e_x = T_x / l_x
 \end{align}
 
-The open-interval formula $L_\omega = l_\omega/m_\omega$ assumes $\omega$ is
-genuinely old (a high $m_\omega$); this is the reason the terminal age must
-be a realistic $\omega=110$ after Kannisto extrapolation rather than an
-artificially low cut-off, which would otherwise produce a nonsensical
-remaining-life-expectancy figure in the thousands of years.
+so that $m_x = d_x / L_x$ holds at every age, including the open interval
+($a_\omega = 1/m_\omega$).
+
+\paragraph{Failure behaviour and coverage.} A province-year is tabulated only
+if exposure is available at every single age 0--100 and rates are finite
+below $Y$; tables that do not qualify are withheld and listed, with the
+reason, in \fn{\$failed}. INE's provincial population by single year of age
+is top-coded at 85+ before 2002, so the supported period is 2002 onwards.
+Zero exposure at ages $\ge Y$ (for example, very old men in Ceuta and
+Melilla) is allowed, because those rates come from the fitted model.
+\fn{validate\_life\_table()} fails on missing or non-contiguous ages,
+non-finite values, increasing $l_x$, non-positive $L_x$ or $e_x$,
+$q_x \notin [0,1]$, a broken $m_x = d_x/L_x$ identity, or
+$e_0 \notin (15, 100]$. The arguments \fn{kannisto\_age} (a fixed $Y$) and
+\fn{fit\_min} (first fitting age) support sensitivity analysis.
 
 \begin{lstlisting}
 build_life_table(mx_df, sex = c("female", "male"))   # single year, single sex
 build_life_tables(mx_1x1)                             # every province and year
 \end{lstlisting}
 
-\fn{build\_life\_tables()} returns \fn{list(fltper, mltper, bltper, qc)} ---
-female, male, and both-sex period life tables, each a tibble with
+\fn{build\_life\_tables()} returns \fn{list(fltper, mltper, bltper, qc,
+failed)}: female, male, and both-sex period life tables, each a tibble with
 \fn{nuts3\_code}, \fn{province\_name}, \fn{year}, \fn{age}, \fn{mx},
-\fn{qx}, \fn{ax}, \fn{lx}, \fn{dx}, \fn{Lx}, \fn{Tx}, \fn{ex}.
-\fn{validate\_life\_table()} checks that $l_x$ is non-increasing in age,
-$L_x>0$, $e_x>0$, and $q_x \in [0,1]$.
+\fn{qx}, \fn{ax}, \fn{lx}, \fn{dx}, \fn{Lx}, \fn{Tx}, \fn{ex}; a \fn{qc}
+tibble (one row per table, with the replacement age $Y$); and the withheld
+tables.
 
 \begin{lstlisting}
 lt <- build_life_tables(rates$mx_1x1)
 lt$fltper[lt$fltper$age == 0, ]   # e0 by province and year, female
 \end{lstlisting}
 
-As a live-verified example, this pipeline gives a period life expectancy at
-birth for A Coru\~{n}a, 2024, of $e_0 = 86.97$ years (female) and $81.21$
-years (male) --- plausible, correct figures for a Spanish province in that
-year.
+With the frozen inputs of the package's \texttt{reproducibility/} folder,
+this gives for A Coru\~{n}a, 2024, $e_0 = 86.95$ years (female) and $81.21$
+years (male).
 
 \subsubsection{Abridged life tables: \fn{build\_abridged\_life\_tables()}}
 \label{sec:abridged}
 
-\fn{build\_abridged\_life\_tables()} builds standard abridged (5-year age
-group) period life tables directly from \fn{compute\_death\_rates()}'s
-\fn{mx\_5x1}, complementing \fn{build\_life\_tables()}'s single-year (1x1)
-tables --- useful for comparing against other agencies' published abridged
-tables, or when only grouped-age data is available. Age groups are
-\fn{"00-04"}, \fn{"05-09"}, \dots, \fn{"95-99"}, \fn{"100+"} (open interval).
+\fn{build\_abridged\_life\_tables()} builds abridged period life tables
+(\fn{"00-04"}, \fn{"05-09"}, \dots, \fn{"95-99"}, \fn{"100+"}) directly from
+the observed grouped rates \fn{mx\_5x1}. It is an independent estimate, not
+an abridgement of the single-year table: it uses no Kannisto smoothing and
+closes at 100+ rather than 110+.
 
-The one exception to building strictly from \fn{mx\_5x1} is the youngest
-group: INE's own age grouping merges age 0 with ages 1--4 into a single
-\fn{"00-04"} group, which would otherwise need an external, less-precise
-$_5a_0$ regression (e.g.\ Coale--Demeny) to handle the sharp within-interval
-infant-mortality gradient. Since \fn{mx\_1x1} already carries the exact
-single-year $m_0$ with its Andreev--Kingkade $a_0$
-(Section~\ref{sec:lifetables}), \fn{build\_abridged\_life\_table()} instead
-builds an exact single-year sub-table for ages 0--4 and aggregates it,
-avoiding that approximation for the one interval where it matters most.
+The youngest group is the one exception to using \fn{mx\_5x1} alone: a
+single-year sub-table for ages 0--4 (Andreev--Kingkade $a_0$, $a_x = 0.5$
+at ages 1--4) is built from \fn{mx\_1x1} and aggregated, which avoids an
+external ${}_5a_0$ approximation for the sharp infant gradient.
 
-For every other closed interval $[x, x+n)$ ($n=5$), the standard
-discrete abridged life-table identities apply (Preston, Heuveline \&
-Guillot, 2001, Ch.\ 3):
+For every other closed interval $[x, x+n)$ ($n=5$) the package uses
+Greville's ${}_na_x$ with the matching Chiang conversion (Preston, Heuveline
+\& Guillot, 2001, Box~3.1):
 
 \begin{align}
-{}_na_x &= n/2 \\
-{}_nq_x &= 1 - e^{-n\, {}_nm_x}
+{}_na_x &= \frac{n}{2} - \frac{n^2}{12}\Bigl({}_nm_x - k_x\Bigr), \qquad
+k_x = \frac{1}{2n}\log\frac{{}_nm_{x+n}}{{}_nm_{x-n}} \\
+{}_nq_x &= \frac{n\,{}_nm_x}{1 + (n - {}_na_x)\,{}_nm_x}, \qquad
+{}_nL_x = n\, l_{x+n} + {}_na_x\, {}_nd_x
 \end{align}
 
-The exponential form for ${}_nq_x$ (rather than the linear Chiang formula
-$n\, {}_nm_x / (1 + (n - {}_na_x)\, {}_nm_x)$ that \fn{build\_life\_table()}
-uses for single-year, $n=1$ intervals) is deliberate: the linear formula can
-exceed 1 once $n$ is as wide as 5 and mortality is high (old-age groups with
-${}_nm_x \gtrsim 0.3$--$0.4$), which the exponential form never does. The
-remaining recursion matches Section~\ref{sec:lifetables} exactly, with the
-person-years-lived identity generalized to the interval width:
-
-\begin{equation}
-{}_nL_x = n\, l_{x+n} + {}_na_x\, {}_nd_x \qquad (x < \omega)
-\end{equation}
+This pair satisfies ${}_nm_x = {}_nd_x / {}_nL_x$ exactly. Where $k_x$ is
+undefined (a zero rate in a neighbouring group) or ${}_nq_x$ would exceed 1,
+the group falls back to a constant hazard,
+${}_nq_x = 1 - e^{-n\,{}_nm_x}$ and ${}_nL_x = {}_nd_x/{}_nm_x$, which also
+preserves the identity. The open interval has $q = 1$ and $L = l/m$.
 
 \begin{lstlisting}
 build_abridged_life_table(mx_1x1, mx_5x1, sex = c("female", "male"))  # one province/year
@@ -631,17 +640,19 @@ build_abridged_life_tables(mx_1x1, mx_5x1)                            # every pr
 
 Returns \fn{list(fltper, mltper, bltper, qc)}, matching
 \fn{build\_life\_tables()}'s structure with \fn{age\_group}/\fn{age\_start}/
-\fn{n} in place of \fn{age}. \fn{validate\_abridged\_life\_table()} checks
-the same invariants as \fn{validate\_life\_table()}.
+\fn{n} in place of \fn{age}. \fn{validate\_abridged\_life\_table()} also
+checks the identity ${}_nm_x = {}_nd_x/{}_nL_x$ in every closed group.
 
 \begin{lstlisting}
 alt <- build_abridged_life_tables(rates$mx_1x1, rates$mx_5x1)
 alt$fltper[alt$fltper$age_group == "00-04", ]
 \end{lstlisting}
 
-As a live-verified cross-check, A Coru\~{n}a 2024's abridged $e_0$ (female)
-comes to $87.03$ years against the exact single-year figure of $86.97$ ---
-a $0.06$-year difference, consistent with the coarser 5-year grouping.
+For A Coru\~{n}a, 2024, the abridged female $e_0$ is $86.95$ years, within
+$0.01$ years of the single-year table. Because the two tables share inputs
+and part of their method, this agreement is a consistency check, not an
+external validation; the comparison with INE's published tables is reported
+in \texttt{reproducibility/}.
 
 \subsection{Exporting to files: \fn{download\_ine\_data()}}
 
@@ -783,19 +794,25 @@ age-of-mother breakdown to build the full age-specific fertility schedule
 and the standard summary indicators derived from it.
 
 \paragraph{Age-specific fertility rate: \fn{age\_specific\_fertility\_rate()}.}
+The package follows INE's methodology for its Indicadores Demogr\'aficos
+B\'asicos:
 
 \begin{equation}
-\mathrm{ASFR}(x) = \frac{B(x)}{W(x)} \times 1000, \qquad
-\mathrm{ASFR}_{\text{female}}(x) = \frac{B_{\text{female}}(x)}{W(x)} \times 1000
+\mathrm{ASFR}(x) = \frac{B(x)}{\bar W(x)}, \qquad
+\mathrm{ASFR}_{\text{female}}(x) = \frac{B_{\text{female}}(x)}{\bar W(x)}, \qquad
+\bar W(x) = \tfrac{1}{2}\bigl[W(x,t) + W(x,t+1)\bigr]
 \end{equation}
 
-for single years of age $x = 15, \dots, 49$ by default, where $B(x)$ is
-births to mothers of age $x$ and $W(x)$ is the female population of age
-$x$. \fn{age\_specific\_fertility\_rate()} returns both the all-newborn rate
-$\mathrm{ASFR}(x)$ and the female-newborn-specific rate
-$\mathrm{ASFR}_{\text{female}}(x)$ (using INE's actual sex-of-newborn
-breakdown, not an assumed constant sex ratio at birth) --- the schedule the
-remaining functions below all consume.
+for single years of age $x = 15, \dots, 49$, where $B(x)$ is births in year
+$t$ to mothers of completed age $x$ and $\bar W(x)$ is the mean annual
+female population (the mean of the January-1 stocks of $t$ and $t+1$; if
+the $t+1$ stock is not available the $t$ stock is used and the row is
+flagged \fn{is\_boundary\_year}). Births to mothers younger than 15 are added
+to age 15 and births to mothers aged 50 or over to age 49, so no births are
+lost. Rates are births \emph{per woman}; the column \fn{asfr\_per\_1000}
+gives the same schedule per 1{,}000 women for display.
+$\mathrm{ASFR}_{\text{female}}$ uses INE's sex-of-newborn breakdown rather
+than an assumed sex ratio at birth.
 
 \begin{lstlisting}
 births_age <- get_ine_births_by_age()
@@ -806,11 +823,8 @@ asfr <- age_specific_fertility_rate(births_age$data, pop$data, age_min = 15, age
 \subsubsection{Total fertility rate: \fn{total\_fertility\_rate()}}
 
 \begin{equation}
-\mathrm{TFR} = \sum_{x=15}^{49} \frac{\mathrm{ASFR}(x)}{1000}
+\mathrm{TFR} = \sum_{x=15}^{49} \mathrm{ASFR}(x) \quad \text{(children per woman)}
 \end{equation}
-
-the true TFR that \fn{crude\_birth\_rate()} and \fn{general\_fertility\_rate()}
-explicitly note this package could not previously compute.
 
 \begin{lstlisting}
 tfr <- total_fertility_rate(asfr)
@@ -818,8 +832,10 @@ tfr <- total_fertility_rate(asfr)
 
 \subsubsection{Mean age at childbearing: \fn{mean\_age\_at\_childbearing()}}
 
+Completed age $x$ covers the interval $[x, x+1)$, so its mid-point is used:
+
 \begin{equation}
-\mathrm{MAC} = \frac{\sum_x x \cdot \mathrm{ASFR}(x)}{\sum_x \mathrm{ASFR}(x)}
+\mathrm{MAC} = \frac{\sum_x (x + 0.5)\, \mathrm{ASFR}(x)}{\sum_x \mathrm{ASFR}(x)}
 \end{equation}
 
 \begin{lstlisting}
@@ -828,37 +844,21 @@ mac <- mean_age_at_childbearing(asfr)
 
 \subsubsection{Gross and net reproduction rates}
 
-The gross reproduction rate (expected daughters per woman over her
-reproductive lifetime, ignoring mortality) sums the female-newborn-specific
-schedule directly, rather than approximating it by scaling TFR with an
-assumed constant sex ratio at birth:
-
 \begin{equation}
-\mathrm{GRR} = \sum_{x=15}^{49} \frac{\mathrm{ASFR}_{\text{female}}(x)}{1000}
+\mathrm{GRR} = \sum_{x=15}^{49} \mathrm{ASFR}_{\text{female}}(x), \qquad
+\mathrm{NRR} = \sum_{x=15}^{49} \mathrm{ASFR}_{\text{female}}(x)\, \frac{L_x}{l_0}
 \end{equation}
 
-The net reproduction rate additionally weights that schedule by the
-mother's own survivorship to each reproductive age, using the female life
-table's $L_x$ (Section~\ref{sec:lifetables}) and radix $l_0$:
-
-\begin{equation}
-\mathrm{NRR} = \sum_{x=15}^{49} \frac{\mathrm{ASFR}_{\text{female}}(x)}{1000} \cdot \frac{L_x}{l_0}
-\end{equation}
-
-so $\mathrm{NRR} \leq \mathrm{GRR}$ always, with equality only in the
-(unrealistic) absence of any mortality before the end of the reproductive
-span.
+using the female period life table of the same province and year
+(Section~\ref{sec:lifetables}), so $\mathrm{NRR} \leq \mathrm{GRR}$.
 
 \begin{lstlisting}
 grr <- gross_reproduction_rate(asfr)
 nrr <- net_reproduction_rate(asfr, lt$fltper)   # lt$fltper: female life table, build_life_tables()
 \end{lstlisting}
 
-As a live-verified example, Madrid 2023 gives $\mathrm{GRR} = 0.538$ and
-$\mathrm{NRR} = 0.535$ --- both well below the replacement threshold of 1,
-consistent with Spain's well-documented below-replacement fertility, with
-$\mathrm{NRR}$ correctly just under $\mathrm{GRR}$ given Spain's low
-mortality at reproductive ages.
+With the frozen inputs, Madrid 2023 gives $\mathrm{GRR} = 0.533$ and
+$\mathrm{NRR} = 0.529$.
 
 \subsubsection{Infant mortality rate: \fn{infant\_mortality\_rate()}}
 
@@ -976,35 +976,46 @@ ${}_{\infty}L_\omega = T_\omega$):
 and $\sum_x \Delta(x) = e_0^{(2)} - e_0^{(1)}$ exactly.
 
 \paragraph{Pollard's method (1988).} An exact \emph{continuous}-time
-decomposition; applied to a discrete single-year life table, its
-symmetric-average form (averaging the two individually-exact continuous
-identities Pollard derives, so the choice of reference table doesn't bias
-the result) is:
+decomposition. The package uses the symmetric average of Pollard's two exact
+forms,
+$e_0^{(2)} - e_0^{(1)} = \int \bigl(\mu^{(1)}(x) - \mu^{(2)}(x)\bigr)\,
+\tfrac12\bigl[\tfrac{l^{(2)}(x)}{l_0^{(2)}} e^{(1)}(x) + \tfrac{l^{(1)}(x)}{l_0^{(1)}} e^{(2)}(x)\bigr]\,dx$,
+and integrates each closed single-year interval by the midpoint rule,
 
 \begin{equation}
 \Delta(x) = \tfrac{1}{2}\bigl(m_x^{(1)} - m_x^{(2)}\bigr)
-  \left(\frac{l_x^{(2)}}{l_0^{(2)}} e_x^{(1)} + \frac{l_x^{(1)}}{l_0^{(1)}} e_x^{(2)}\right)
+  \left(\frac{L_x^{(2)}}{l_0^{(2)}}\,\bar e_x^{(1)} + \frac{L_x^{(1)}}{l_0^{(1)}}\,\bar e_x^{(2)}\right),
+  \qquad \bar e_x = \tfrac12\,(e_x + e_{x+1}),
 \end{equation}
 
-Unlike Arriaga's, this is exact only in the continuous limit --- on a
-single-year life table it is a close but not identical approximation of
-$e_0^{(2)} - e_0^{(1)}$, so treat Arriaga's (the default) as the primary
-result and Pollard's as a cross-check.
+and the open interval $\omega$ exactly under its constant hazard
+($l(\omega+t) = l_\omega e^{-\mu t}$, $e(\omega+t) = 1/\mu$):
+
+\begin{equation}
+\Delta(\omega) = \bigl(m_\omega^{(1)} - m_\omega^{(2)}\bigr)\, e_\omega^{(1)} e_\omega^{(2)}
+  \cdot \tfrac12\left(\frac{l_\omega^{(1)}}{l_0^{(1)}} + \frac{l_\omega^{(2)}}{l_0^{(2)}}\right).
+\end{equation}
+
+The sum differs from $e_0^{(2)} - e_0^{(1)}$ by a small discretisation
+residual, returned with the result:
 
 \begin{lstlisting}
 lt <- build_life_tables(rates$mx_1x1)
-lt_a <- lt$fltper[lt$fltper$province_name == "A Coruna" & lt$fltper$year == 2023, ]
-lt_b <- lt$fltper[lt$fltper$province_name == "Madrid" & lt$fltper$year == 2023, ]
+female <- lt$fltper   # female tables
+lt_a <- female[female$province_name == "A Coruna" & female$year == 2023, ]
+lt_b <- female[female$province_name == "Madrid" & female$year == 2023, ]
 
 decomp <- decompose_life_expectancy(lt_a, lt_b, method = "arriaga")
-sum(decomp$contribution)   # recovers the e0 gap exactly
+sum(decomp$contribution)          # recovers the e0 gap exactly
+attr(decomp, "e0_difference")     # e0(Madrid) - e0(A Coruna)
+attr(decompose_life_expectancy(lt_a, lt_b, "pollard"), "residual")
 \end{lstlisting}
 
-As a live-verified example, A Coru\~{n}a vs.\ Madrid, 2023: $e_0$ gap $=
-1.04$ years, with age 0 and age 58 the largest single-age contributors
-(Arriaga and Pollard correlate at $0.999$ on this comparison). For a
-temporal comparison --- A Coru\~{n}a, 2016 vs.\ 2023 --- the gap is $0.69$
-years.
+With the frozen inputs, the female $e_0$ gap between A Coru\~{n}a and
+Madrid in 2023 is $1.04$ years, with ages 0, 58 and 90 the largest
+single-age contributors; Pollard's contributions sum to the gap within
+$0.0003$ years. For a temporal comparison, A Coru\~{n}a 2016 versus 2023, the
+gain is $0.76$ years.
 
 \subsection{Mapping functions}
 
@@ -1050,7 +1061,7 @@ map_life_expectancy(le_df, year, sex = "both",
 \end{lstlisting}
 
 \begin{lstlisting}
-map_life_expectancy(le, year = max(le$year), sex = "female")
+map_life_expectancy(le, year = 2024, sex = "female")
 \end{lstlisting}
 
 \subsection{Population pyramids and trend charts}
@@ -1065,7 +1076,7 @@ plot_population_pyramid(pop_df, year, region = NULL, title = NULL)
 \end{lstlisting}
 
 \begin{lstlisting}
-plot_population_pyramid(pop$data, year = max(pop$data$year), region = "A Coruna")
+plot_population_pyramid(pop$data, year = 2024, region = "A Coruna")
 \end{lstlisting}
 
 Note \fn{geom\_col(width = 1)} is used internally rather than
@@ -1162,7 +1173,7 @@ directly in \pkg{ggplot2} syntax rather than calling
 library(inedemogR); library(dplyr); library(tidyr); library(ggplot2)
 
 pop <- get_ine_population()
-latest_year <- max(pop$data$year)
+latest_year <- 2024
 andalusia <- pop$data |> filter(nuts2_code == "ES61", year == latest_year)
 
 pyramid_data <- andalusia |>
@@ -1231,7 +1242,7 @@ ggplot(le |> filter(province_name %in% provinces_to_compare),
   labs(x = "Year", y = "Life expectancy at birth (e0)", color = "Province") +
   theme_minimal()
 
-map_life_expectancy(le, year = max(le$year), sex = "female",
+map_life_expectancy(le, year = 2024, sex = "female",
                      title = "Life expectancy at birth by province, Spain")
 \end{lstlisting}
 
@@ -1297,11 +1308,11 @@ rates <- compute_death_rates(deaths$data_provinces, exposure$data)
 lt <- build_life_tables(rates$mx_1x1)
 nrr <- net_reproduction_rate(asfr, lt$fltper)
 
-latest_year <- max(asfr$year)
+latest_year <- 2024
 provinces_to_compare <- c("Madrid", "Barcelona", "Sevilla", "A Coruna")
 
 ggplot(asfr |> filter(province_name %in% provinces_to_compare, year == latest_year),
-       aes(x = age, y = asfr, color = province_name)) +
+       aes(x = age, y = asfr_per_1000, color = province_name)) +
   geom_line(linewidth = 0.8) + geom_point(size = 1.2) +
   labs(x = "Age of mother", y = "ASFR (births per 1,000 women of that age)",
        color = "Province", title = paste("ASFR schedule,", latest_year)) +
@@ -1335,7 +1346,7 @@ exposure <- compute_exposure(pop$data, deaths$data_provinces)
 rates <- compute_death_rates(deaths$data_provinces, exposure$data)
 lt <- build_life_tables(rates$mx_1x1)
 
-latest_year <- max(lt$fltper$year); earliest_year <- min(lt$fltper$year)
+latest_year <- 2024; earliest_year <- 2006   # fixed years: results do not change with new INE releases
 lt_a <- lt$fltper |> filter(province_name == "A Coruna", year == latest_year)
 lt_b <- lt$fltper |> filter(province_name == "Madrid", year == latest_year)
 decomp <- decompose_life_expectancy(lt_a, lt_b, method = "arriaga")
@@ -1348,11 +1359,9 @@ ggplot(decomp, aes(x = age, y = contribution, fill = contribution > 0)) +
   theme_minimal()
 \end{lstlisting}
 
-Live-verified: A Coru\~{n}a 2024 $e_0 = 86.97$ (matching the value confirmed
-in Section~\ref{sec:lifetables} exactly), Madrid 2024 $e_0 = 87.83$
---- gap $0.86$ years; the temporal comparison (A Coru\~{n}a, 1996--2024)
-gives a gap of $5.23$ years, consistent with the secular mortality
-improvement documented throughout this tutorial.
+With the frozen inputs: A Coru\~{n}a 2024 female $e_0 = 86.95$, Madrid 2024
+$e_0 = 87.86$, a gap of $0.91$ years; the temporal comparison (A Coru\~{n}a,
+2006--2024) gives a gain of $2.85$ years.
 
 \subsubsection{Abridged life tables analysis (\fn{abridged\_life\_tables\_analysis.R})}
 
@@ -1371,7 +1380,7 @@ rates <- compute_death_rates(deaths$data_provinces, exposure$data)
 lt_1x1 <- build_life_tables(rates$mx_1x1)
 lt_abridged <- build_abridged_life_tables(rates$mx_1x1, rates$mx_5x1)
 
-latest_year <- max(lt_abridged$fltper$year)
+latest_year <- 2024
 lt_1x1_one <- lt_1x1$fltper |> filter(province_name == "A Coruna", year == latest_year)
 lt_abridged_one <- lt_abridged$fltper |> filter(province_name == "A Coruna", year == latest_year)
 
@@ -1385,9 +1394,9 @@ ggplot(survivorship, aes(x = age, y = lx, color = table)) +
   theme_minimal()
 \end{lstlisting}
 
-Live-verified: A Coru\~{n}a 2024 abridged $e_0 = 87.03$ against the exact
-single-year $86.97$ --- a $0.06$-year difference, confirming the abridged
-construction recovers the single-year result closely.
+With the frozen inputs, A Coru\~{n}a 2024 abridged female $e_0 = 86.95$,
+within $0.01$ years of the single-year table. The two tables share their
+inputs, so this is a consistency check rather than external validation.
 
 \newpage
 \appendix

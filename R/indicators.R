@@ -364,156 +364,171 @@ birth_death_ratio <- function(df) {
 
 #' Age-specific fertility rates (ASFR)
 #'
-#' Computes age-specific fertility rates (births per 1,000 women of that
-#' age) per province, year, and single year of age, joining
-#' [get_ine_births_by_age()] and [get_ine_population()] output. This is
-#' the schedule underlying [total_fertility_rate()],
-#' [mean_age_at_childbearing()], [gross_reproduction_rate()], and
-#' [net_reproduction_rate()] - unlike [general_fertility_rate()], which
-#' collapses reproductive age into one aggregate rate,
-#' `age_specific_fertility_rate()` keeps the full age schedule, the input
-#' a true total fertility rate requires.
+#' Computes age-specific fertility rates per province, year, and single year
+#' of mother's age, following INE's methodology for its Indicadores
+#' Demograficos Basicos (INE, *Indicadores Demograficos Basicos: Metodologia*,
+#' pp. 4 and 9-10):
 #'
-#' @param births_age_df Tibble as returned by `get_ine_births_by_age()
-#'   $data` (columns `nuts3_code`, `province_name`, `year`, `age`,
-#'   `female`, `total`).
-#' @param pop_df Population tibble as returned by `get_ine_population()
-#'   $data` (columns `nuts3_code`, `year`, `age`, `female`).
-#' @param age_min Integer, the youngest single-year age included
-#'   (default `15`).
-#' @param age_max Integer, the oldest single-year age included
-#'   (default `49`).
+#' * **Exposure** is the mean annual female population, the average of the
+#'   January-1 stocks of years `t` and `t + 1`. If the `t + 1` stock is not in
+#'   `pop_df`, the `t` stock is used and the row is flagged with
+#'   `is_boundary_year = TRUE` (with a warning).
+#' * **Out-of-range births** are folded into the boundary ages: births to
+#'   mothers younger than `age_min` (including INE's "under 15" group, coded
+#'   `age = NA`, `age_group = "under15"`) are added to age `age_min`, and births
+#'   to mothers older than `age_max` (INE's "50 and over") to age `age_max`.
+#'   No births are dropped.
+#'
+#' @param births_age_df Tibble as returned by `get_ine_births_by_age()$data`
+#'   (columns `nuts3_code`, `province_name`, `year`, `age`, `female`, `total`,
+#'   and optionally `age_group`).
+#' @param pop_df Population tibble as returned by `get_ine_population()$data`
+#'   (columns `nuts3_code`, `year`, `age`, `female`), January-1 stocks.
+#' @param age_min,age_max Integer bounds of the reproductive age span
+#'   (default 15-49).
 #' @return A tibble with `nuts3_code`, `province_name`, `year`, `age`,
-#'   `asfr` (all births per 1,000 women of that age), `asfr_female`
-#'   (births of female newborns per 1,000 women of that age - the input
-#'   [gross_reproduction_rate()] and [net_reproduction_rate()] need).
+#'   `births`, `women` (mean annual female population), `asfr` (births per
+#'   woman), `asfr_female` (female births per woman, for
+#'   [gross_reproduction_rate()] and [net_reproduction_rate()]),
+#'   `asfr_per_1000` (`1000 * asfr`, for display), and `is_boundary_year`.
 #' @examples
 #' births_age <- tibble::tibble(
 #'   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
 #'   age = c(20, 30), female = c(10, 25), total = c(20, 50)
 #' )
 #' pop <- tibble::tibble(
-#'   nuts3_code = "ES111", year = 2023, age = c(20, 30), female = c(2000, 2500)
+#'   nuts3_code = "ES111", year = rep(2023:2024, each = 2), age = c(20, 30, 20, 30),
+#'   female = c(2000, 2500, 2100, 2400)
 #' )
 #' age_specific_fertility_rate(births_age, pop)
 #' @export
 age_specific_fertility_rate <- function(births_age_df, pop_df, age_min = 15L, age_max = 49L) {
-  births_by_age <- births_age_df |>
-    dplyr::filter(!is.na(.data$age), .data$age >= age_min, .data$age <= age_max) |>
-    dplyr::select(
-      "nuts3_code", "province_name", "year", "age",
-      births_total = "total", births_female = "female"
-    )
+  b <- births_age_df
+  if ("age_group" %in% names(b)) {
+    b$age[is.na(b$age) & b$age_group %in% "under15"] <- age_min
+  }
+  if (anyNA(b$age)) {
+    warning(sum(is.na(b$age)), " birth rows with unknown mother's age dropped.")
+    b <- b[!is.na(b$age), ]
+  }
+  births_by_age <- b |>
+    dplyr::mutate(age = pmin(pmax(.data$age, age_min), age_max)) |>
+    dplyr::group_by(.data$nuts3_code, .data$province_name, .data$year, .data$age) |>
+    dplyr::summarise(births = sum(.data$total), births_female = sum(.data$female), .groups = "drop")
 
-  women <- pop_df |>
+  stocks <- pop_df |>
     dplyr::filter(.data$age >= age_min, .data$age <= age_max) |>
-    dplyr::select("nuts3_code", "year", "age", women = "female")
+    dplyr::select("nuts3_code", "year", "age", "female")
+  women <- stocks |>
+    dplyr::left_join(
+      dplyr::mutate(stocks, year = .data$year - 1L) |> dplyr::rename(female_next = "female"),
+      by = c("nuts3_code", "year", "age")
+    ) |>
+    dplyr::mutate(
+      is_boundary_year = is.na(.data$female_next),
+      women = ifelse(.data$is_boundary_year, .data$female, (.data$female + .data$female_next) / 2)
+    ) |>
+    dplyr::select("nuts3_code", "year", "age", "women", "is_boundary_year")
 
-  births_by_age |>
+  out <- births_by_age |>
     dplyr::inner_join(women, by = c("nuts3_code", "year", "age")) |>
     dplyr::transmute(
       nuts3_code = .data$nuts3_code, province_name = .data$province_name,
       year = .data$year, age = .data$age,
-      asfr = .data$births_total / .data$women * 1000,
-      asfr_female = .data$births_female / .data$women * 1000
+      births = .data$births, women = .data$women,
+      asfr = .data$births / .data$women,
+      asfr_female = .data$births_female / .data$women,
+      asfr_per_1000 = 1000 * .data$asfr,
+      is_boundary_year = .data$is_boundary_year
     )
+  if (any(out$is_boundary_year)) {
+    warning("No January-1 population for year t + 1 in ",
+            paste(unique(out$year[out$is_boundary_year]), collapse = ", "),
+            ": using the January-1 stock of year t as exposure (is_boundary_year = TRUE).")
+  }
+  out
 }
 
 #' Total fertility rate (TFR)
 #'
-#' Computes the total fertility rate (expected live births per woman
-#' over her reproductive lifetime, under a given year's fertility
-#' schedule) per province and year, by summing [age_specific_fertility_rate()]
-#' over single years of age. This is the true TFR that
-#' [crude_birth_rate()]'s and [general_fertility_rate()]'s documentation
-#' both note the package previously could not compute, since it requires
-#' the age-of-mother breakdown [get_ine_births_by_age()] retrieves.
+#' Sum of [age_specific_fertility_rate()]'s `asfr` (births per woman) over
+#' single years of age: the expected number of children per woman under the
+#' year's age schedule.
 #'
 #' @param asfr_df Output of [age_specific_fertility_rate()].
-#' @return A tibble with `nuts3_code`, `province_name`, `year`, `tfr`.
+#' @return A tibble with `nuts3_code`, `province_name`, `year`, `tfr`
+#'   (children per woman).
 #' @examples
 #' asfr <- tibble::tibble(
 #'   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-#'   age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+#'   age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 #' )
 #' total_fertility_rate(asfr)
 #' @export
 total_fertility_rate <- function(asfr_df) {
   asfr_df |>
     dplyr::group_by(.data$nuts3_code, .data$province_name, .data$year) |>
-    dplyr::summarise(tfr = sum(.data$asfr) / 1000, .groups = "drop")
+    dplyr::summarise(tfr = sum(.data$asfr), .groups = "drop")
 }
 
 #' Mean age at childbearing (MAC)
 #'
-#' Computes the mean age at childbearing (the ASFR-weighted average age
-#' of mothers at birth) per province and year, from
-#' [age_specific_fertility_rate()] output.
+#' ASFR-weighted mean of the mid-points `x + 0.5` of the completed-age
+#' intervals, as in INE's methodology.
 #'
 #' @param asfr_df Output of [age_specific_fertility_rate()].
-#' @return A tibble with `nuts3_code`, `province_name`, `year`, `mac`.
+#' @return A tibble with `nuts3_code`, `province_name`, `year`, `mac` (years).
 #' @examples
 #' asfr <- tibble::tibble(
 #'   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-#'   age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+#'   age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 #' )
 #' mean_age_at_childbearing(asfr)
 #' @export
 mean_age_at_childbearing <- function(asfr_df) {
   asfr_df |>
     dplyr::group_by(.data$nuts3_code, .data$province_name, .data$year) |>
-    dplyr::summarise(mac = sum(.data$age * .data$asfr) / sum(.data$asfr), .groups = "drop")
+    dplyr::summarise(mac = sum((.data$age + 0.5) * .data$asfr) / sum(.data$asfr), .groups = "drop")
 }
 
 #' Gross reproduction rate (GRR)
 #'
-#' Computes the gross reproduction rate (expected daughters per woman
-#' over her reproductive lifetime, ignoring mortality) per province and
-#' year, summing [age_specific_fertility_rate()]'s `asfr_female` column -
-#' the actual female-newborn-specific rate INE's age-of-mother table
-#' provides, rather than the more common approximation of scaling
-#' [total_fertility_rate()] by an assumed constant sex ratio at birth.
-#' See [net_reproduction_rate()] to additionally account for mortality
-#' before/during reproductive age.
+#' Sum of [age_specific_fertility_rate()]'s `asfr_female` (female births per
+#' woman): expected daughters per woman, ignoring mortality. Uses INE's
+#' births by sex of the newborn directly rather than scaling the TFR by an
+#' assumed sex ratio at birth.
 #'
 #' @param asfr_df Output of [age_specific_fertility_rate()].
-#' @return A tibble with `nuts3_code`, `province_name`, `year`, `grr`.
+#' @return A tibble with `nuts3_code`, `province_name`, `year`, `grr`
+#'   (daughters per woman).
 #' @examples
 #' asfr <- tibble::tibble(
 #'   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-#'   age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+#'   age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 #' )
 #' gross_reproduction_rate(asfr)
 #' @export
 gross_reproduction_rate <- function(asfr_df) {
   asfr_df |>
     dplyr::group_by(.data$nuts3_code, .data$province_name, .data$year) |>
-    dplyr::summarise(grr = sum(.data$asfr_female) / 1000, .groups = "drop")
+    dplyr::summarise(grr = sum(.data$asfr_female), .groups = "drop")
 }
 
 #' Net reproduction rate (NRR)
 #'
-#' Computes the net reproduction rate (expected daughters per woman over
-#' her reproductive lifetime, accounting for the mother's own survival to
-#' each reproductive age) per province and year, weighting
-#' [age_specific_fertility_rate()]'s `asfr_female` by the female
-#' life-table survivorship function `Lx` from [build_life_tables()]'s
-#' `fltper` (person-years lived in the age interval, per HMD Methods
-#' Protocol V6 - the same `Lx` [life_expectancy_summary()]'s `ex` is
-#' derived from). Unlike [gross_reproduction_rate()], which assumes every
-#' woman survives to bear children at every age, NRR is the mortality-
-#' adjusted figure: NRR < GRR whenever there is any mortality before the
-#' end of the reproductive span.
+#' `sum(asfr_female * Lx / l0)`: expected daughters per woman allowing for
+#' the mother's survival, with `Lx` from the female period life table of the
+#' same province and year ([build_life_tables()]'s `fltper`, radix
+#' `l0 = 100000`).
 #'
 #' @param asfr_df Output of [age_specific_fertility_rate()].
 #' @param lt_df `build_life_tables()`'s `fltper` tibble (columns
-#'   `nuts3_code`, `year`, `age`, `Lx`) - must be the *female* life table,
-#'   since NRR tracks mothers' own survival.
+#'   `nuts3_code`, `year`, `age`, `Lx`).
 #' @return A tibble with `nuts3_code`, `province_name`, `year`, `nrr`.
 #' @examples
 #' asfr <- tibble::tibble(
 #'   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-#'   age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+#'   age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 #' )
 #' fltper <- tibble::tibble(
 #'   nuts3_code = "ES111", year = 2023, age = c(20, 30), Lx = c(99000, 98500)
@@ -526,8 +541,7 @@ net_reproduction_rate <- function(asfr_df, lt_df) {
   asfr_df |>
     dplyr::inner_join(lx_by_age, by = c("nuts3_code", "year", "age")) |>
     dplyr::group_by(.data$nuts3_code, .data$province_name, .data$year) |>
-    # 100000 = the life-table radix (l0), matching build_life_table()'s lx[1].
-    dplyr::summarise(nrr = sum(.data$asfr_female / 1000 * .data$Lx / 100000), .groups = "drop")
+    dplyr::summarise(nrr = sum(.data$asfr_female * .data$Lx / 100000), .groups = "drop")
 }
 
 #' Life expectancy summary
@@ -579,10 +593,8 @@ life_expectancy_summary <- function(lt_df, sex = c("female", "male", "both")) {
 #' and [life_expectancy_summary()] applied afterwards.
 #'
 #' @param mx_df Output of the `mx_1x1` element of [compute_death_rates()]
-#'   (columns `nuts3_code`, `province_name`, `year`, `age`, `mx_female`,
-#'   `mx_male`, `mx_total`). All three `mx_*` columns must be present
-#'   regardless of `sex`, since the underlying life-table construction
-#'   builds all three sex tables together.
+#'   (rates `mx_*`, deaths `d_*`, and exposures `e_*` for all three sexes,
+#'   which [build_life_tables()] needs for Kannisto smoothing).
 #' @param province Character, a province name (regular expressions
 #'   allowed, matched against `province_name` — same convention as
 #'   `province` in [plot_lexis_diagram()]). Must match exactly one
@@ -591,17 +603,14 @@ life_expectancy_summary <- function(lt_df, sex = c("female", "male", "both")) {
 #' @return A tibble with `nuts3_code`, `province_name`, `year`, `e0`,
 #'   `e65`, `sex`.
 #' @examples
-#' # A Gompertz-like mx curve spanning to a realistic terminal age (100):
-#' # build_life_table()'s open-interval formula at the terminal age
-#' # (Lx = lx / mx) assumes that age is genuinely old (high mx), so a
-#' # short age range with a low terminal mx would produce a nonsensical
-#' # "remaining life expectancy" in the thousands of years.
 #' age <- 0:100
+#' e <- 1e5
+#' m <- 0.0003 * exp(0.07 * age)
 #' mx <- tibble::tibble(
 #'   nuts3_code = "ES111", province_name = "A Coruna", year = 2023, age = age,
-#'   mx_female = 0.0003 * exp(0.07 * age),
-#'   mx_male = 0.00035 * exp(0.072 * age),
-#'   mx_total = 0.00033 * exp(0.071 * age)
+#'   mx_female = m, mx_male = 1.2 * m, mx_total = 1.1 * m,
+#'   d_female = m * e, d_male = 1.2 * m * e, d_total = 2.2 * m * e,
+#'   e_female = e, e_male = e, e_total = 2 * e
 #' )
 #' life_expectancy(mx, province = "A Coruna", sex = "female")
 #' @export
@@ -617,9 +626,7 @@ life_expectancy <- function(mx_df, province, sex = c("total", "female", "male"))
       "); narrow the pattern to match exactly one."
     )
   }
-  nuts3 <- unique(df$nuts3_code)
-
-  lt <- build_life_tables_one(df, nuts3, matched)
+  lt <- build_life_tables(df)
   lt_table <- switch(sex, female = lt$fltper, male = lt$mltper, total = lt$bltper)
 
   result <- life_expectancy_summary(lt_table, sex = if (sex == "total") "both" else sex)

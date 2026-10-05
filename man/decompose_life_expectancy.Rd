@@ -21,21 +21,22 @@ over the \emph{same set of ages} as \code{lt1}.}
 \value{
 A tibble with \code{age}, \code{contribution} (years of the \code{e2(0) - e1(0)} gap attributable to mortality differences at that age;
 positive means that age group contributed to a \emph{gain} from \code{lt1} to
-\code{lt2}).
+\code{lt2}). Attributes \code{e0_difference} (the actual \code{e2(0) - e1(0)}) and
+\code{residual} (\code{e0_difference - sum(contribution)}, zero up to rounding
+for Arriaga).
 }
 \description{
 Attributes the difference in life expectancy at birth (\code{e0}) between
 two life tables to age-specific contributions, using either Arriaga's
 (1984) or Pollard's (1988) method. Arriaga's is an exact discrete
 decomposition: \code{sum(contribution)} recovers \code{e2(0) - e1(0)} exactly.
-Pollard's is exact only in the continuous limit; applied to a
-single-year life table, \code{sum(contribution)} is a close but not exact
-approximation of \code{e2(0) - e1(0)} - the approximation error grows with
-how steeply mortality changes with age (a few percent of the total
-gap under a fast-rising hazard is possible), so treat Arriaga's
-(the default) as the primary result and Pollard's as a cross-check,
-per Ponnapalli (2005)'s finding that the two methods' age patterns
-agree closely without being identical. Use this to answer "how much
+Pollard's is exact in continuous time; here each closed single-year
+interval is integrated with the midpoint rule and the open interval
+exactly under its constant hazard, so \code{sum(contribution)} differs from
+\code{e2(0) - e1(0)} by a small discretisation residual. The residual is
+returned as an attribute so it can be reported and checked against a
+tolerance; treat Arriaga's method (the default) as the primary result
+and Pollard's as a cross-check. Use this to answer "how much
 of the life-expectancy gap
 between province A and B (or between year Y1 and Y2) comes from
 mortality at each age?" - complementing \code{\link[=life_expectancy_summary]{life_expectancy_summary()}}/

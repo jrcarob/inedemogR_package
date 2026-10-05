@@ -9,7 +9,7 @@ get_ine_births_by_age(
   n_periods = 100,
   use_cache = TRUE,
   force = FALSE,
-  cache_dir = tools::R_user_dir("inedemogR", "cache")
+  cache_dir = NULL
 )
 }
 \arguments{
@@ -25,8 +25,13 @@ than \code{\link[=get_ine_births]{get_ine_births()}}'s; caching (see \code{use_c
 
 \item{force}{Logical (default \code{FALSE}). See \code{\link[=get_ine_births]{get_ine_births()}}.}
 
-\item{cache_dir}{Directory for cached data. Defaults to the same
-location \code{\link[=update_ine_data]{update_ine_data()}} uses.}
+\item{cache_dir}{Directory for cached data. The default \code{NULL} caches
+in a per-session directory under \code{tempdir()}: repeated calls in the same
+session reuse the first download, but nothing persists afterwards. Pass a
+directory, e.g. \code{tools::R_user_dir("inedemogR", "cache")}, for a cache
+that persists across sessions. A cache stores the parsed result as
+\code{.rds}; refresh it with \code{force = TRUE}. Results carry a \code{provenance}
+attribute (request, retrieval time in UTC, API, package version).}
 }
 \value{
 \code{list(data, qc)}: \code{data} is a tibble with columns \code{ine_code},

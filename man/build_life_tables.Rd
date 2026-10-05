@@ -4,32 +4,75 @@
 \alias{build_life_tables}
 \title{Build period life tables for every province}
 \usage{
-build_life_tables(mx_1x1)
+build_life_tables(mx_1x1, kannisto_age = NULL, fit_min = KANNISTO_FIT_MIN)
 }
 \arguments{
-\item{mx_1x1}{Output of the \code{mx_1x1} element of \code{\link[=compute_death_rates]{compute_death_rates()}}.}
+\item{mx_1x1}{The \code{mx_1x1} element of \code{\link[=compute_death_rates]{compute_death_rates()}} (needs the
+\verb{mx_*}, \verb{d_*}, and \verb{e_*} columns).}
+
+\item{kannisto_age}{Optional fixed replacement age \code{Y} (an integer in
+80-100) overriding the HMD 100-deaths rule; for sensitivity analysis.}
+
+\item{fit_min}{First age of the Kannisto fitting window (default 80, as in
+HMD; the window ends at 99). For sensitivity analysis.}
 }
 \value{
-\code{list(fltper, mltper, bltper, qc)}: each a tibble with
-\code{nuts3_code}, \code{province_name}, \code{year}, \code{age}, \code{mx}, \code{qx}, \code{ax}, \code{lx},
-\code{dx}, \code{Lx}, \code{Tx}, \code{ex}; \code{qc} is a named list of
-\code{\link[=validate_life_table]{validate_life_table()}} results, one per province/year/sex table
-that failed validation.
+A list:
+\itemize{
+\item \code{fltper}, \code{mltper}, \code{bltper}: tibbles with \code{nuts3_code},
+\code{province_name}, \code{year}, \code{age}, \code{mx}, \code{qx}, \code{ax}, \code{lx}, \code{dx}, \code{Lx},
+\code{Tx}, \code{ex}.
+\item \code{qc}: tibble with one row per table built (\code{nuts3_code}, \code{year},
+\code{sex}, \code{kannisto_age} = Y, \code{passed}, \code{issues}).
+\item \code{failed}: tibble of withheld tables (\code{nuts3_code}, \code{province_name},
+\code{year}, \code{sex}, \code{reason}).
+}
 }
 \description{
-Constructs female, male, and both-sex 1x1 period life tables for every
-province and year present in \code{mx_1x1}, per SHMD Protocol Section 12,
-Step 6: Kannisto smoothing/extrapolation of old-age mortality (fitted on
-ages 80-95, extended to 110+), then standard life-table recursion with
-the Andreev-Kingkade a0.
+Constructs female, male, and combined-sex single-year period life tables
+(ages 0 to 110+) for every province and year in \code{mx_1x1}.
 }
+\section{Method}{
+
+Follows HMD Methods Protocol V6, Section 7.1:
+\itemize{
+\item Observed rates are used below the replacement age \code{Y}, the lowest age
+from 80 with at most 100 female or 100 male deaths, capped at 95 (the
+same \code{Y} for both sexes).
+\item From \code{Y} upward, rates come from a Kannisto model fitted to deaths and
+exposures at ages 80-99 by Poisson maximum likelihood, with both
+parameters constrained to be non-negative so smoothed rates cannot fall
+with age.
+\item Combined-sex rates at ages \code{Y}+ weight the smoothed sex-specific rates by
+a smoothed female share of exposure; combined-sex a0 is the
+death-weighted average of the sex-specific Andreev-Kingkade values.
+}
+
+Deviations from HMD V6, all forced by the INE inputs: (i) exposure uses an
+even Lexis-triangle split because INE deaths are not classified by cohort
+(see \code{\link[=compute_exposure]{compute_exposure()}}); (ii) the Kannisto fit uses ages 80-99 because
+INE's single-year detail ends at an open interval 100+, whereas HMD fits to
+80-110+; (iii) no birth-by-month exposure correction.
+}
+
+\section{Failure behaviour}{
+
+A province-year whose input lacks finite rates and exposures at every
+single age 0-100 is not tabulated: its three tables are withheld and the
+reason is reported in \code{failed}. This covers INE releases whose population
+or deaths are top-coded below age 100 (for example, some historical years
+for Ceuta and Melilla).
+}
+
 \examples{
+age <- 0:100
+e <- 1e5
+mx <- 0.0003 * exp(0.07 * age)
 mx_1x1 <- tibble::tibble(
-  nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-  age = 0:5,
-  mx_female = c(0.004, 0.0003, 0.0002, 0.0002, 0.0002, 0.0002),
-  mx_male = c(0.005, 0.0004, 0.0003, 0.0003, 0.0003, 0.0003),
-  mx_total = c(0.0045, 0.00035, 0.00025, 0.00025, 0.00025, 0.00025)
+  nuts3_code = "ES111", province_name = "A Coruna", year = 2023, age = age,
+  mx_female = mx, mx_male = 1.2 * mx, mx_total = 1.1 * mx,
+  d_female = mx * e, d_male = 1.2 * mx * e, d_total = 2.2 * mx * e,
+  e_female = e, e_male = e, e_total = 2 * e
 )
 lt <- build_life_tables(mx_1x1)
 lt$fltper

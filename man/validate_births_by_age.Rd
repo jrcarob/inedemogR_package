@@ -18,3 +18,18 @@ rows; single-year ages (15-49) present for every province-year found
 in the data (the two open intervals, \code{under15}/\verb{50plus}, are not
 required to be present since they are typically very small or zero).
 }
+\examples{
+# Only 3 of the 35 required single-year ages (15-49) are present here,
+# so this deliberately triggers the incomplete age coverage check.
+births_age_df <- tibble::tibble(
+  nuts3_code = "ES611",
+  province_name = "Almeria",
+  year = 2020,
+  age = c(20, 21, 22),
+  age_group = c("20", "21", "22"),
+  female = c(30, 28, 25),
+  male = c(32, 29, 27),
+  total = female + male
+)
+validate_births_by_age(births_age_df)
+}

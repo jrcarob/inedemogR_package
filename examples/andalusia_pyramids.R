@@ -20,7 +20,7 @@ library(ggplot2)
 pop <- get_ine_population()
 
 # 2. Filter to Andalusia's 8 provinces and the latest available year.
-latest_year <- max(pop$data$year)
+latest_year <- 2024 # fixed so results do not change with new releases; max(pop$data$year) gives the newest year
 
 andalusia <- pop$data |>
   filter(nuts2_code == "ES61", year == latest_year)

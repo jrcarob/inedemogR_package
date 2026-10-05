@@ -36,8 +36,8 @@ test_that("build_abridged_life_table's youngest group survivorship matches an ex
 
   # Cross-check: l(5) implied by the abridged table's first group should
   # match l(5) from the exact single-year life table built on the same
-  # mx1 data (both use the same Andreev-Kingkade a0 and a1=0.4/a(2:4)=0.5
-  # conventions for ages 0-4).
+  # mx1 data (both use the same Andreev-Kingkade a0 and ax = 0.5 at ages
+  # 1-4).
   lt_1x1 <- build_life_table(fx$mx1[fx$mx1$age <= 4, ], sex = "female")
   # lt_1x1 treats age 4 as terminal (open interval), so compare survivorship
   # up to (not including) age 4 plus one more step computed the same way
@@ -85,24 +85,11 @@ test_that("build_abridged_life_table errors when mx_1x1 is missing ages 0-4", {
   )
 })
 
-test_that("build_abridged_life_table_both averages female/male a0 for the youngest group", {
-  fx <- make_abridged_fixture()
-
-  alt_total <- build_abridged_life_table_both(fx$mx1, fx$mx5)
-  alt_female <- build_abridged_life_table(fx$mx1, fx$mx5, sex = "female")
-  alt_male <- build_abridged_life_table(fx$mx1, fx$mx5, sex = "male")
-
-  expected_a0 <- mean(c(
-    andreev_kingkade_a0(fx$mx1$mx[1], "female"), andreev_kingkade_a0(fx$mx1$mx[1], "male")
-  ))
-  # ax[1] for total isn't directly exposed pre-aggregation, but the
-  # implied 0-4 nax should sit between the female-only and male-only
-  # values given the averaged a0 feeds the same recursion.
-  expect_true(
-    alt_total$ax[1] >= min(alt_female$ax[1], alt_male$ax[1]) - 1e-6 &&
-      alt_total$ax[1] <= max(alt_female$ax[1], alt_male$ax[1]) + 1e-6
-  )
-  expect_true(is.finite(expected_a0))
+test_that("combined-sex abridged a0 is death-weighted (HMD V6 Eq. 77)", {
+  r <- tibble::tibble(age = 0, mx_female = 0.003, mx_male = 0.005, d_female = 30, d_male = 90)
+  a0f <- andreev_kingkade_a0(0.003, "female")
+  a0m <- andreev_kingkade_a0(0.005, "male")
+  expect_equal(total_a0(r), (30 * a0f + 90 * a0m) / 120)
 })
 
 test_that("validate_abridged_life_table passes on a well-formed table", {

@@ -37,10 +37,10 @@ provinces_to_compare <- c("Madrid", "Barcelona", "Sevilla", "A Coruna")
 # 5. Chart 1: the ASFR age schedule itself, latest year available - the
 #    classic single-peaked fertility curve, shifted right (peak in the
 #    30s, not the 20s) as expected for Spain's late childbearing pattern.
-latest_year <- max(asfr$year)
+latest_year <- 2024 # fixed so results do not change with new releases; max(asfr$year) gives the newest year
 ggplot(
   asfr |> filter(province_name %in% provinces_to_compare, year == latest_year),
-  aes(x = age, y = asfr, color = province_name)
+  aes(x = age, y = asfr_per_1000, color = province_name)
 ) +
   geom_line(linewidth = 0.8) +
   geom_point(size = 1.2) +

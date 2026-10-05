@@ -18,14 +18,24 @@ compute_exposure(population, deaths)
 \code{\link[=validate_exposure]{validate_exposure()}}.
 }
 \description{
-Computes E(x,t) = 1/2[P(x,t) + P(x,t+1)] + 1/2[D_upper(x,t) -
-D_lower(x,t)] for every province present in both \code{population} and
-\code{deaths}, per SHMD Protocol Section 12, Step 4. INE's Tempus3 death
-tables don't carry a birth-cohort split, so the Lexis triangle is
-derived via the documented 50/50 fallback (HMD Methods Protocol V6
-Appendix A) unless \code{deaths} already carries a \code{cohort} column.
+Computes E(x,t) = 1/2[P(x,t) + P(x,t+1)] + 1/6[D_L(x,t) - D_U(x,t)]
+(HMD Methods Protocol V6, Eq. 57) for every province present in both
+\code{population} and \code{deaths}, where \code{D_L} and \code{D_U} are deaths in the lower
+(cohort born in \code{t - x}) and upper (cohort born in \code{t - x - 1}) Lexis
+triangles.
 }
 \details{
+INE's death tables are not classified by birth cohort. Unless \code{deaths}
+carries a \code{cohort} column, deaths are split evenly between the two
+triangles, the correction term is zero, and exposure is the mean of the
+two January-1 populations. This is an adaptation of the HMD protocol,
+which splits 1x1 deaths by regression (Appendix A) and corrects for the
+monthly distribution of births (Appendix E); its effect is quantified in
+the package's validation study (see \verb{reproducibility/}).
+
+If \code{P(x,t+1)} is unavailable for a year that is kept, exposure falls back
+to \code{P(x,t)} and the row is flagged with \code{is_boundary_year = TRUE}.
+
 Death registration lags population estimates by about a year, so
 \code{population} commonly includes a most-recent year (e.g. a Jan-1 stock
 snapshot) with no corresponding rows anywhere in \code{deaths} yet. That

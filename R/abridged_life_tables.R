@@ -38,124 +38,85 @@ parse_age_group_labels <- function(age_group) {
 }
 
 #' @noRd
-build_infant_segment <- function(mx0_4, sex) {
-  # Exact single-year recursion for ages 0-4 (not treated as a terminal
-  # open interval - age 4 continues on to age 5), using the same
-  # Andreev-Kingkade a0 / a1 = 0.4 / a(2:4) = 0.5 conventions as
-  # build_life_table(), then aggregated into the 0-4 group total. For
-  # the both-sex table, average the female/male a0 exactly as
-  # build_life_table_both() does.
-  a0 <- if (sex == "total") {
-    mean(c(andreev_kingkade_a0(mx0_4[1], "female"), andreev_kingkade_a0(mx0_4[1], "male")))
-  } else {
-    andreev_kingkade_a0(mx0_4[1], sex)
-  }
-  ax <- c(a0, 0.4, 0.5, 0.5, 0.5)
+build_infant_segment <- function(mx0_4, a0) {
+  # Single-year recursion for ages 0-4 with the same conventions as
+  # build_life_table() (Andreev-Kingkade a0, ax = 0.5 at ages 1-4), then
+  # aggregated into the 0-4 group.
+  ax <- c(a0, 0.5, 0.5, 0.5, 0.5)
   qx <- mx0_4 / (1 + (1 - ax) * mx0_4)
-
-  l0 <- 100000
-  lx <- numeric(5)
-  dx <- numeric(5)
-  lx[1] <- l0
-  for (i in 1:5) {
-    dx[i] <- lx[i] * qx[i]
-    if (i < 5) lx[i + 1] <- lx[i] - dx[i]
-  }
-  l5 <- lx[5] - dx[5]
-
-  Lx <- numeric(5)
-  for (i in 1:5) {
-    nxt <- if (i < 5) lx[i + 1] else l5
-    Lx[i] <- nxt + ax[i] * dx[i]
-  }
-
-  L0_4 <- sum(Lx)
-  d0_4 <- l0 - l5
-  # Standard identity: nLx = n*l(x+n) + nax*ndx  =>  nax = (nLx - n*l(x+n))/ndx
+  lx <- 100000 * cumprod(c(1, 1 - qx))
+  dx <- lx[1:5] * qx
+  L0_4 <- sum(lx[1:5] - (1 - ax) * dx)
+  l5 <- lx[6]
+  d0_4 <- lx[1] - l5
+  # nLx = n*l(x+n) + nax*ndx  =>  nax = (nLx - n*l(x+n)) / ndx
   a0_4 <- if (d0_4 > 0) (L0_4 - 5 * l5) / d0_4 else 2.5
-
-  list(l0 = l0, l5 = l5, L0_4 = L0_4, d0_4 = d0_4, a0_4 = a0_4, q0_4 = d0_4 / l0)
+  list(l0 = lx[1], L0_4 = L0_4, a0_4 = a0_4, q0_4 = d0_4 / lx[1])
 }
 
+# Closed groups 5-9, ..., 95-99 use Greville's nax (Preston, Heuveline &
+# Guillot 2001, Box 3.1), nax = n/2 - n^2/12 (nmx - k) with
+# k = log(m[x+n] / m[x-n]) / (2n), and the matching Chiang conversion
+# nqx = n nmx / (1 + (n - nax) nmx), nLx = n l(x+n) + nax ndx. Any nax gives
+# nmx = ndx / nLx exactly with this pair. Where k is undefined (a zero rate in
+# a neighbouring group) or nax would push nqx above 1, the group falls back to
+# a constant hazard: nqx = 1 - exp(-n nmx), nLx = ndx / nmx. The open interval
+# has qx = 1 and Lx = lx / mx.
 #' @noRd
-build_abridged_life_table_engine <- function(mx_5x1, mx0_4, sex) {
+build_abridged_life_table_engine <- function(mx_5x1, mx0_4, a0) {
   groups <- parse_age_group_labels(mx_5x1$age_group) |>
     dplyr::mutate(mx = mx_5x1$mx) |>
     dplyr::arrange(.data$age_start)
-  n_groups <- nrow(groups)
-
   if (length(mx0_4) != 5) stop("`mx_1x1` must have single-year rates for ages 0-4.")
-  infant <- build_infant_segment(mx0_4, sex)
+  if (any(!is.finite(groups$mx)) || any(!is.finite(mx0_4))) {
+    stop("All grouped and age 0-4 death rates must be finite.", call. = FALSE)
+  }
+  k <- nrow(groups)
+  n <- groups$n
+  mx <- groups$mx
+  infant <- build_infant_segment(mx0_4, a0)
 
-  ax <- numeric(n_groups)
-  qx <- numeric(n_groups)
-  ax[1] <- infant$a0_4
+  closed <- seq_len(k)[-c(1, k)]
+  slope <- log(mx[closed + 1] / mx[closed - 1]) / (2 * n[closed])
+  ax <- rep(NA_real_, k)
+  ax[closed] <- n[closed] / 2 - n[closed]^2 / 12 * (mx[closed] - slope)
+  greville <- is.finite(ax) & ax > 0 & ax < n & ax * mx < 1
+  qx <- ifelse(greville, n * mx / (1 + (n - ax) * mx), 1 - exp(-n * mx))
   qx[1] <- infant$q0_4
-  for (i in seq_len(n_groups)) {
-    if (i == 1) next
-    if (groups$is_open[i]) {
-      ax[i] <- NA_real_ # derived from lx/mx below, like build_life_table()'s open interval
-      qx[i] <- 1
-    } else {
-      n <- groups$n[i]
-      ax[i] <- n / 2
-      # The linear Chiang formula (n*mx/(1+(n-ax)*mx)) that
-      # build_life_table() uses for single-year (n=1) intervals can
-      # exceed 1 once n is as wide as 5 and mx is high (old-age groups
-      # with mx > ~0.3-0.4) - the wider interval makes the linear
-      # constant-hazard approximation break down. The exponential
-      # formula (equivalent to assuming a genuinely constant hazard
-      # over the interval) is always bounded in [0, 1) and is the
-      # standard fallback for this case (Preston, Heuveline & Guillot
-      # 2001, Ch. 3).
-      qx[i] <- 1 - exp(-n * groups$mx[i])
-    }
-  }
-
-  lx <- numeric(n_groups)
-  dx <- numeric(n_groups)
-  lx[1] <- infant$l0
-  for (i in seq_len(n_groups)) {
-    dx[i] <- lx[i] * qx[i]
-    if (i < n_groups) lx[i + 1] <- lx[i] - dx[i]
-  }
-
-  Lx <- numeric(n_groups)
+  qx[k] <- 1
+  lx <- infant$l0 * cumprod(c(1, 1 - qx[-k]))
+  dx <- lx * qx
+  l_next <- c(lx[-1], 0)
+  Lx <- ifelse(greville, n * l_next + ax * dx, ifelse(mx > 0, dx / mx, n * lx))
   Lx[1] <- infant$L0_4
-  for (i in seq_len(n_groups)) {
-    if (i == 1) next
-    Lx[i] <- if (i < n_groups) {
-      # nLx = n*l(x+n) + nax*ndx (n > 1 here, unlike build_life_table()'s
-      # single-year case where n=1 makes the n* factor disappear).
-      groups$n[i] * lx[i + 1] + ax[i] * dx[i]
-    } else if (is.finite(groups$mx[i]) && groups$mx[i] > 0) {
-      lx[i] / groups$mx[i]
-    } else {
-      NA_real_
-    }
-  }
-  # For the open interval, ax isn't meaningfully separate from mx (Lx =
-  # lx/mx exactly), so report ax = 1/mx (the mean remaining lifetime
-  # under constant hazard), matching build_life_table()'s convention.
-  if (groups$is_open[n_groups] && is.finite(groups$mx[n_groups]) && groups$mx[n_groups] > 0) {
-    ax[n_groups] <- 1 / groups$mx[n_groups]
-  }
-
+  Lx[k] <- lx[k] / mx[k]
+  ax <- ifelse(greville, ax, ifelse(dx > 0, (Lx - n * l_next) / dx, n / 2))
+  ax[1] <- infant$a0_4
+  ax[k] <- 1 / mx[k]
   Tx <- rev(cumsum(rev(Lx)))
-  ex <- Tx / lx
 
   tibble::tibble(
-    age_group = groups$age_group, age_start = groups$age_start, n = groups$n,
-    mx = groups$mx, ax = ax, qx = qx, lx = lx, dx = dx, Lx = Lx, Tx = Tx, ex = ex
+    age_group = groups$age_group, age_start = groups$age_start, n = n,
+    mx = mx, ax = ax, qx = qx, lx = lx, dx = dx, Lx = Lx, Tx = Tx, ex = Tx / lx
   )
 }
 
 #' Build an abridged (5-year age group) period life table
 #'
-#' Constructs a full abridged period life table (age groups `"00-04"`,
-#' `"05-09"`, ..., `"95-99"`, `"100+"`) directly from grouped central
-#' death rates, per the standard discrete abridged life-table method
-#' (Chiang's `nqx` formula; Preston, Heuveline & Guillot 2001, Ch. 3).
+#' Constructs an abridged period life table (age groups `"00-04"`,
+#' `"05-09"`, ..., `"95-99"`, `"100+"`) independently from observed grouped
+#' central death rates. It is a separate estimate, not an abridgement of the
+#' single-year table from [build_life_tables()]: it uses no Kannisto
+#' smoothing, and its open interval is 100+ rather than 110+, so the two
+#' tables' life expectancies differ slightly by construction.
+#'
+#' Closed groups from age 5 use Greville's `nax` with the Chiang
+#' conversion `nqx = n nmx / (1 + (n - nax) nmx)` and
+#' `nLx = n l(x+n) + nax ndx` (Preston, Heuveline & Guillot 2001, Box 3.1),
+#' falling back to a constant hazard (`nqx = 1 - exp(-n nmx)`,
+#' `nLx = ndx / nmx`) where Greville's slope term is undefined. Both keep
+#' `nmx = ndx / nLx` exactly. The open interval has `qx = 1`,
+#' `Lx = lx / mx`.
 #' Complements [build_life_table()]'s single-year (1x1) tables - use
 #' this when comparing against other agencies' published abridged
 #' tables, or when only grouped-age data is available. The youngest
@@ -186,23 +147,26 @@ build_abridged_life_table <- function(mx_1x1, mx_5x1, sex = c("female", "male"))
   sex <- match.arg(stringr::str_to_lower(sex), c("female", "male"))
 
   mx0_4 <- mx_1x1 |> dplyr::filter(.data$age %in% 0:4) |> dplyr::arrange(.data$age)
-  build_abridged_life_table_engine(mx_5x1, mx0_4$mx, sex)
-}
-
-#' @noRd
-build_abridged_life_table_both <- function(mx_1x1, mx_5x1) {
-  mx0_4 <- mx_1x1 |> dplyr::filter(.data$age %in% 0:4) |> dplyr::arrange(.data$age)
-  build_abridged_life_table_engine(mx_5x1, mx0_4$mx, "total")
+  build_abridged_life_table_engine(mx_5x1, mx0_4$mx, andreev_kingkade_a0(mx0_4$mx[1], sex))
 }
 
 #' Validate a constructed abridged life table
 #'
-#' Checks: `lx` strictly non-increasing by age group; `Lx > 0`; `ex >
-#' 0`; `qx` in \[0, 1\]. Mirrors [validate_life_table()] for the abridged
-#' (5-year age group) case.
+#' Fails when any column is missing or non-finite, `lx` increases, `Lx`
+#' or `ex` is not positive, `qx` lies outside \[0, 1\], or the identity
+#' `mx = dx / Lx` fails in a closed interval from age 5 upward (the 0-4
+#' group is built from single-year rates, so its grouped `mx` need not
+#' satisfy it exactly).
 #'
 #' @param alt Output of [build_abridged_life_table()] for one year.
 #' @return `list(passed = logical, issues = named list of flagged tibbles)`.
+#' @examples
+#' mx1 <- data.frame(age = 0:4, mx = c(0.004, 0.0003, 0.0002, 0.0002, 0.0002))
+#' mx5 <- data.frame(
+#'   age_group = c("00-04", "05-09", "100+"), mx = c(0.0006, 0.0001, 0.35)
+#' )
+#' alt <- build_abridged_life_table(mx1, mx5, "female")
+#' validate_abridged_life_table(alt)
 #' @export
 validate_abridged_life_table <- function(alt) {
   issues <- list()
@@ -213,6 +177,16 @@ validate_abridged_life_table <- function(alt) {
     dplyr::mutate(lx_increase = .data$lx > dplyr::lag(.data$lx, default = dplyr::first(.data$lx) + 1)) |>
     dplyr::filter(.data$lx_increase)
   if (nrow(lx_check) > 0) issues$lx_not_monotonic <- lx_check |> dplyr::select("age_group", "lx")
+
+  cols <- c("mx", "qx", "ax", "lx", "dx", "Lx", "Tx", "ex")
+  nonfinite <- !apply(is.finite(as.matrix(alt[cols])), 1, all)
+  if (any(nonfinite)) issues$non_finite_values <- alt[nonfinite, c("age_group", cols)]
+
+  closed <- alt[-c(1, nrow(alt)), ]
+  gap <- abs(closed$dx / closed$Lx - closed$mx) > 1e-8 * pmax(1, closed$mx)
+  if (any(gap, na.rm = TRUE)) {
+    issues$mx_not_dx_over_Lx <- closed[which(gap), c("age_group", "mx", "dx", "Lx")]
+  }
 
   Lx_check <- alt |> dplyr::filter(.data$Lx <= 0 | is.na(.data$Lx))
   if (nrow(Lx_check) > 0) issues$non_positive_Lx <- Lx_check |> dplyr::select("age_group", "Lx")
@@ -232,6 +206,16 @@ validate_abridged_life_table <- function(alt) {
   list(passed = passed, issues = issues)
 }
 
+# Combined-sex a0: death-weighted average of the sex-specific values (HMD V6
+# Eq. 77); simple average when age-0 death counts are not supplied.
+#' @noRd
+total_a0 <- function(mx_1x1_year) {
+  r <- mx_1x1_year[mx_1x1_year$age == 0, ]
+  a0 <- c(andreev_kingkade_a0(r$mx_female, "female"), andreev_kingkade_a0(r$mx_male, "male"))
+  d0 <- if (all(c("d_female", "d_male") %in% names(r))) c(r$d_female, r$d_male) else c(1, 1)
+  if (sum(d0) > 0) sum(a0 * d0) / sum(d0) else mean(a0)
+}
+
 #' @noRd
 build_abridged_life_tables_one <- function(mx_1x1_all, mx_5x1_all, nuts3, province_name) {
   years <- sort(unique(mx_5x1_all$year))
@@ -245,12 +229,20 @@ build_abridged_life_tables_one <- function(mx_1x1_all, mx_5x1_all, nuts3, provin
       dplyr::filter(.data$year == yr) |>
       dplyr::select(age_group = "age_group", mx = dplyr::all_of(col))
 
-    alt <- if (sex == "total") {
-      build_abridged_life_table_both(mx1, mx5)
-    } else {
-      build_abridged_life_table(mx1, mx5, sex = sex)
-    }
-    alt$year <- yr
+    alt <- tryCatch(
+      if (sex == "total") {
+        mx0_4 <- dplyr::arrange(dplyr::filter(mx1, .data$age %in% 0:4), .data$age)$mx
+        build_abridged_life_table_engine(mx5, mx0_4, total_a0(mx_1x1_all[mx_1x1_all$year == yr, ]))
+      } else {
+        build_abridged_life_table(mx1, mx5, sex = sex)
+      },
+      error = function(e) {
+        warning(province_name, " ", yr, " ", sex, ": abridged table withheld (",
+                conditionMessage(e), ")", call. = FALSE)
+        NULL
+      }
+    )
+    if (!is.null(alt)) alt$year <- yr
     alt
   }
 

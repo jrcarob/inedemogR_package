@@ -19,3 +19,14 @@ Checks: cells with no usable source population (flagged for audit, not
 treated as an error); no other negative/NA exposures; exposure should
 not exceed 2x population (a generous plausibility bound).
 }
+\examples{
+exposure_df <- tibble::tibble(
+  nuts3_code = "ES611", year = 2020, age = c(0, 1),
+  female = c(495, 480), male = c(520, 500), total = c(1015, 980),
+  is_boundary_year = FALSE, is_missing_source_pop = FALSE
+)
+population_df <- tibble::tibble(
+  nuts3_code = "ES611", year = 2020, age = c(0, 1), total = c(1000, 970)
+)
+validate_exposure(exposure_df, population_df)
+}

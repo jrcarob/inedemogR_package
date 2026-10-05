@@ -10,17 +10,16 @@ mean_age_at_childbearing(asfr_df)
 \item{asfr_df}{Output of \code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}}.}
 }
 \value{
-A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{mac}.
+A tibble with \code{nuts3_code}, \code{province_name}, \code{year}, \code{mac} (years).
 }
 \description{
-Computes the mean age at childbearing (the ASFR-weighted average age
-of mothers at birth) per province and year, from
-\code{\link[=age_specific_fertility_rate]{age_specific_fertility_rate()}} output.
+ASFR-weighted mean of the mid-points \code{x + 0.5} of the completed-age
+intervals, as in INE's methodology.
 }
 \examples{
 asfr <- tibble::tibble(
   nuts3_code = "ES111", province_name = "A Coruna", year = 2023,
-  age = c(20, 30), asfr = c(30, 80), asfr_female = c(15, 40)
+  age = c(20, 30), asfr = c(0.03, 0.08), asfr_female = c(0.015, 0.04)
 )
 mean_age_at_childbearing(asfr)
 }
