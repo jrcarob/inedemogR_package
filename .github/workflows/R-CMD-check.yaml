@@ -39,6 +39,12 @@ jobs:
           r-version: ${{ matrix.config.r }}
           http-user-agent: ${{ matrix.config.http-user-agent }}
 
+      # The vignette is a LaTeX document (R.rsp::tex engine): install LaTeX.
+      - uses: r-lib/actions/setup-tinytex@v2
+
+      - name: Install LaTeX packages used by the vignette
+        run: tlmgr install enumitem listings caption parskip booktabs psnfss xcolor geometry hyperref amsmath amsfonts tools
+
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: any::rcmdcheck
