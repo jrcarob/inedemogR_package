@@ -1,8 +1,10 @@
 # inedemogR 0.2.0
 
-Corrections prompted by peer review (SoftwareX, SOFTX-D-26-01227). Several
-change numerical results; the effect on every number reported in the
-accompanying article is tabulated by `reproducibility/02_manuscript_numbers.R`.
+This update corrects numerical errors in 0.1.0 identified in a methodological
+audit and validation of the package against the Human Mortality Database
+protocol and the official tables of the Spanish statistics institute (INE),
+so that users of the CRAN version obtain correct results. Main changes (see
+NEWS.md):
 
 ## Breaking changes and corrected results
 
