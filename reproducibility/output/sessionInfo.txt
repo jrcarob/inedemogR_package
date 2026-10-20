@@ -1,0 +1,37 @@
+R version 4.5.2 (2025-10-31)
+Platform: aarch64-apple-darwin20
+Running under: macOS Tahoe 26.6.1
+
+Matrix products: default
+BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib 
+LAPACK: /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.1
+
+locale:
+[1] C.UTF-8/C.UTF-8/C.UTF-8/C/C.UTF-8/C.UTF-8
+
+time zone: Europe/Berlin
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] inedemogR_0.2.1 testthat_3.3.2 
+
+loaded via a namespace (and not attached):
+ [1] tidyr_1.3.2        generics_0.1.4     class_7.3-23       KernSmooth_2.23-26
+ [5] stringi_1.8.7      hms_1.1.4          magrittr_2.0.5     grid_4.5.2        
+ [9] RColorBrewer_1.1-3 pkgload_1.5.0      fastmap_1.2.0      rprojroot_2.1.1   
+[13] pkgbuild_1.4.8     sessioninfo_1.2.3  brio_1.1.5         e1071_1.7-17      
+[17] DBI_1.3.0          purrr_1.2.2        scales_1.4.0       mapSpain_1.2.0    
+[21] httr2_1.3.0        cli_3.6.6          crayon_1.5.3       rlang_1.3.0       
+[25] units_1.0-1        ineapir_0.2.6      bit64_4.8.2        ellipsis_0.3.2    
+[29] withr_3.0.3        remotes_2.5.0      cachem_1.1.0       devtools_2.4.6    
+[33] otel_0.2.0         parallel_4.5.2     tools_4.5.2        tzdb_0.5.0        
+[37] memoise_2.0.1      dplyr_1.2.1        ggplot2_4.0.3      vctrs_0.7.3       
+[41] R6_2.6.1           proxy_0.4-29       lifecycle_1.0.5    classInt_0.4-11   
+[45] stringr_1.6.0      bit_4.6.0          fs_2.1.0           vroom_1.7.1       
+[49] usethis_3.2.1      pkgconfig_2.0.3    desc_1.4.3         pillar_1.11.1     
+[53] gtable_0.3.6       glue_1.8.1         Rcpp_1.1.2         sf_1.1-2          
+[57] tibble_3.3.1       tidyselect_1.2.1   rstudioapi_0.18.0  farver_2.1.2      
+[61] readr_2.2.0        compiler_4.5.2     S7_0.2.2          
